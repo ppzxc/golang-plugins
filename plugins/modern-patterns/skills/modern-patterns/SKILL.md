@@ -1,6 +1,7 @@
 ---
 name: modern-patterns
 description: "Use when writing, reviewing, or refactoring Go code in production services — error handling, concurrency, interfaces, testing, and resilience patterns."
+user_invocable: true
 ---
 
 # Modern Go Patterns
