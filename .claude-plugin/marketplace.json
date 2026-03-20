@@ -1,0 +1,23 @@
+{
+  "name": "modern-go-pattern",
+  "owner": {
+    "name": "ppzxc",
+    "email": "cjh8487@naver.com"
+  },
+  "metadata": {
+    "description": "Modern Go patterns and best practices skill",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "modern-go-pattern",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/ppzxc/modern-go-pattern.git"
+      },
+      "description": "Production-grade Go patterns — error handling, concurrency, interfaces, testing, and resilience patterns",
+      "version": "0.0.1",
+      "strict": true
+    }
+  ]
+}
