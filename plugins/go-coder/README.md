@@ -1,4 +1,4 @@
-# modern-patterns
+# go-coder
 
 Production-grade Go 패턴 레퍼런스 스킬입니다.
 
@@ -25,7 +25,7 @@ Production-grade Go 패턴 레퍼런스 스킬입니다.
 
 ```bash
 /plugin marketplace add ppzxc/go-skills
-/plugin install modern-patterns
+/plugin install go-coder
 ```
 
 ## 사용 방법
@@ -33,7 +33,7 @@ Production-grade Go 패턴 레퍼런스 스킬입니다.
 설치 후 Claude Code에서 슬래시 커맨드로 스킬을 호출합니다:
 
 ```
-/modern-patterns
+/go-coder
 ```
 
 Go 코드 작성, 리뷰, 리팩토링 시 자동으로 활성화되기도 합니다.

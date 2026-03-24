@@ -12,8 +12,8 @@
   },
   "plugins": [
     {
-      "name": "modern-patterns",
-      "source": "./plugins/modern-patterns",
+      "name": "go-coder",
+      "source": "./plugins/go-coder",
       "description": "Production-grade Go patterns — error handling, concurrency, interfaces, testing, and resilience patterns",
       "version": "0.0.1"
     }

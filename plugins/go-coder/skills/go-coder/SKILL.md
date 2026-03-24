@@ -1,5 +1,5 @@
 ---
-name: modern-patterns
+name: go-coder
 description: "Use when writing, reviewing, or refactoring Go code in production services — error handling, concurrency, interfaces, testing, and resilience patterns."
 user_invocable: true
 ---

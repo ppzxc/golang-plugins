@@ -1,5 +1,5 @@
 {
-  "name": "modern-patterns",
+  "name": "go-coder",
   "version": "0.0.1",
   "description": "Modern Go patterns skill — error handling, context, generics, concurrency, interface design, testing, resilience, and project structure",
   "author": {
