@@ -10,18 +10,13 @@ Based on three canonical books:
 
 ## Contents
 
-1. **Error Handling** — `%w` vs `%v`, `errors.Is/As`, sentinel vs custom types
-2. **Context** — propagation, timeout, value usage rules
-3. **Generics** — type constraints, functions vs methods
+1. **Types & Interfaces** — accept interfaces / return structs, constructor return type rules
+2. **Error Handling** — `%w` vs `%v`, `errors.Is/As`, sentinel vs custom types
+3. **Context** — propagation, timeout, value usage rules
 4. **Concurrency** — goroutine lifecycle, errgroup vs WaitGroup, mutex vs channel, leak prevention
-5. **Interface Design** — accept interfaces / return structs, constructor return type rules
-6. **Slice & Map** — nil vs empty, pre-allocation, backing array aliasing
-7. **Constructor & Config** — functional options, config struct
-8. **Resilience** — retry backoff, graceful shutdown, circuit breaker
-9. **Project Structure** — cmd/internal/pkg, package naming
-10. **Structured Logging** — slog setup, handlers, groups (Go 1.21+)
-11. **Dependency Injection** — constructor wiring in cmd/
-12. **Configuration** — env-based config, startup validation
+5. **Service Design** — structured logging (slog), dependency injection, env-based config
+6. **Resilience** — retry backoff, graceful shutdown, circuit breaker
+7. **Performance & Pitfalls** — slice/map, string ops, defer, escape analysis
 
 ## Installation
 

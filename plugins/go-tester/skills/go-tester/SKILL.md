@@ -137,7 +137,17 @@ func BenchmarkParseUser(b *testing.B) {
 	data := []byte(`{"name":"alice","email":"alice@example.com"}`)
 	b.ResetTimer()   // exclude setup time
 	b.ReportAllocs() // show allocations/op
-	for b.Loop() {   // Go 1.24+; use b.N in earlier versions
+	for b.Loop() {   // Go 1.24+ preferred
+		ParseUser(data)
+	}
+}
+
+// Go 1.23 and earlier — use b.N
+func BenchmarkParseUserLegacy(b *testing.B) {
+	data := []byte(`{"name":"alice","email":"alice@example.com"}`)
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
 		ParseUser(data)
 	}
 }
