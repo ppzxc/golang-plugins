@@ -1,0 +1,10 @@
+{
+  "name": "go-coder",
+  "version": "0.0.1",
+  "description": "Production Go patterns — types, interfaces, error handling, concurrency, service design, resilience, and structured logging",
+  "author": {
+    "name": "ppzxc",
+    "email": "cjh8487@naver.com",
+    "url": "https://ppzxc.github.io"
+  }
+}
