@@ -297,7 +297,7 @@ func square(ctx context.Context, in <-chan int) <-chan int {
 // Fan-out: distribute work to N workers
 func fanOut(ctx context.Context, in <-chan Work, n int) []<-chan Result {
     channels := make([]<-chan Result, n)
-    for i := range n { channels[i] = process(ctx, in) }
+    for i := range n { channels[i] = process(ctx, in) }  // Go 1.22+: range over integer
     return channels
 }
 
@@ -332,7 +332,7 @@ func merge(ctx context.Context, channels ...<-chan Result) <-chan Result {
 // errgroup: parallel API calls — first error cancels all
 g, ctx := errgroup.WithContext(ctx)
 for _, url := range urls {
-    url := url
+    url := url  // capture range variable (required in Go < 1.22)
     g.Go(func() error { return fetch(ctx, url) })
 }
 if err := g.Wait(); err != nil { return err }
@@ -340,7 +340,7 @@ if err := g.Wait(); err != nil { return err }
 // WaitGroup: worker pool — must drain all jobs
 errCh := make(chan error, len(jobs))
 var wg sync.WaitGroup
-for range workers {
+for range workers {  // Go 1.22+: range over integer
     wg.Add(1)
     go func() {
         defer wg.Done()
@@ -352,6 +352,7 @@ for range workers {
     }()
 }
 go func() { wg.Wait(); close(errCh) }()
+// caller: for err := range errCh { ... }  // drain errors after goroutines finish
 ```
 
 ### Mutex vs Channel — [ConcurrencyInGo] Ch.2
@@ -415,6 +416,7 @@ func process(data []byte) string {
 ```
 
 ---
+
 ## 5. Service Design — [CloudNative] Ch.2-5, [LearningGo] Ch.14, [GoBook] Ch.10
 
 ### Project Structure
@@ -668,7 +670,7 @@ type State int
 const (
     StateClosed   State = iota  // requests pass through
     StateOpen                    // requests rejected immediately
-    StateHalfOpen               // one request allowed through to test
+    StateHalfOpen               // probing — note: this simplified example does not enforce single-probe semantics
 )
 
 type CircuitBreaker struct {
@@ -887,10 +889,10 @@ func compute() *Point { return &Point{X: 1, Y: 2} }  // heap-allocated (escapes)
 | Worker pool, must drain all jobs | `WaitGroup + chan error` | [ConcurrencyInGo] Ch.4 |
 | Protect shared state | `sync.Mutex` | [ConcurrencyInGo] Ch.2 |
 | Transfer data ownership between goroutines | Channel | [ConcurrencyInGo] Ch.2 |
-| Many optional constructor params | Functional Options | [LearningGo] Ch.13 |
-| Config from file/env, >3 required fields | Config Struct | [LearningGo] Ch.13 |
+| Many optional constructor params | Functional Options | [LearningGo] Ch.14 |
+| Config from file/env, >3 required fields | Config Struct | [LearningGo] Ch.14 |
 | Single implementation constructor | Return concrete struct | [LearningGo] Ch.7 |
-| Multiple swappable implementations | Return interface | [LearningGo] Ch.7 |
+| Multiple swappable implementations (exception) | Return interface | [LearningGo] Ch.7 |
 | JSON API returns empty list | `make([]T, 0)` | [Mistakes] #22 |
 | Unstable downstream service | Circuit breaker | [CloudNative] Ch.8 |
 | Transient failures | Retry + exponential backoff + jitter | [CloudNative] Ch.7 |
