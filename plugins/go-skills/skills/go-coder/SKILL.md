@@ -419,19 +419,78 @@ func process(data []byte) string {
 
 ## 5. Service Design — [CloudNative] Ch.2-5, [LearningGo] Ch.14, [GoBook] Ch.10
 
-### Project Structure
+### Project Structure — [golang-standards/project-layout](https://github.com/golang-standards/project-layout)
+
+#### Go 핵심 디렉토리
 
 ```
-cmd/        — binary entry points (one directory per binary)
-internal/   — private packages, not importable outside this module
-pkg/        — public libraries safe for external import
+cmd/        — 바이너리 진입점. 서브디렉토리 하나당 실행 파일 하나 (cmd/server/main.go)
+              비즈니스 로직은 최소화 — 복잡한 코드는 internal/ 또는 pkg/에 위치
+internal/   — Go 컴파일러가 외부 임포트를 차단하는 비공개 패키지
+              internal/app/ (앱 로직), internal/pkg/ (공유 유틸) 으로 세분화 가능
+pkg/        — 외부 프로젝트가 사용해도 되는 공개 라이브러리
+              노출 의도를 명시적으로 신호함. 불확실하면 internal/ 사용
+vendor/     — go mod vendor로 관리되는 의존성 스냅샷
+              라이브러리가 아닌 애플리케이션에만 커밋. Go 1.13+ 모듈 프록시로 대체 가능
+              현재 Go 커뮤니티 추세: 모듈 프록시(GOPROXY) 사용 시 vendor/ 커밋 불필요
 ```
+
+#### 서비스 / 웹 애플리케이션
+
+```
+api/        — OpenAPI/Swagger 스펙, JSON 스키마, Protocol Buffer 정의 파일
+web/        — 정적 웹 에셋, 서버 사이드 템플릿, SPA
+```
+
+#### 공통 애플리케이션 디렉토리
+
+```
+configs/    — 설정 파일 템플릿 및 기본값 (confd, consul-template 포함)
+init/       — systemd, upstart, supervisord 등 프로세스 관리자 설정
+scripts/    — 빌드, 설치, 분석 스크립트. 루트 Makefile을 단순하게 유지
+build/      — 패키징 및 CI 설정
+              build/package/ — Docker, RPM 등 컨테이너/OS 패키지
+              build/ci/      — CI 파이프라인 설정 (Jenkins, GitHub Actions 등)
+deployments/ — IaaS/PaaS/오케스트레이션 설정 (docker-compose, k8s, Terraform)
+test/       — 추가 외부 테스트 앱 및 테스트 데이터 (Go 표준 _test.go 파일과 별개)
+```
+
+#### 지원 디렉토리
+
+```
+docs/       — 설계 문서 및 사용자 문서 (godoc 생성 문서 외)
+tools/      — 이 프로젝트를 위한 지원 도구. /pkg, /internal 임포트 가능
+examples/   — 애플리케이션 및 라이브러리 사용 예제
+third_party/ — 외부 헬퍼, 포크된 코드, 서드파티 유틸리티
+githooks/   — Git 훅 스크립트
+assets/     — 저장소 이미지, 로고 등 관련 에셋
+website/    — GitHub Pages 미사용 시 프로젝트 웹사이트 데이터
+```
+
+#### 피해야 할 디렉토리
+
+```
+src/        — Go 프로젝트에서 사용 금지. Java 스타일 구조로 오해를 유발
+              $GOPATH/src 와 혼동되어 모듈 경로가 복잡해짐
+```
+
+#### 실전 예시
 
 ```go
-// cmd/server/main.go — wire everything together, start server
-// internal/user/     — domain logic: User, UserStore, UserService
-// internal/http/     — HTTP handlers, middleware, routing
-// pkg/middleware/    — reusable middleware (could be used by other projects)
+// cmd/server/main.go — 의존성 연결(wiring), 서버 시작
+// cmd/worker/main.go — 별도 바이너리: 백그라운드 작업자
+
+// internal/user/     — 도메인 로직: User, UserStore, UserService
+// internal/http/     — HTTP 핸들러, 미들웨어, 라우팅
+// internal/config/   — 설정 로드 및 검증
+
+// pkg/middleware/    — 재사용 가능한 미들웨어 (다른 프로젝트에서도 사용 가능)
+// pkg/errors/        — 공개 에러 타입
+
+// api/openapi.yaml   — API 스펙
+// configs/app.yaml   — 기본 설정값
+// deployments/k8s/   — Kubernetes 매니페스트
+// scripts/build.sh   — 빌드 스크립트
 ```
 
 ### Package Naming — [GoBook] Ch.10
