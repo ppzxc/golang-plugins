@@ -16,7 +16,7 @@ Rule-based reference for production Go code. Every rule cites a canonical source
 
 ### DO
 
-- **Order struct fields by alignment**: Place larger fields first to minimize padding [Mistakes#91]
+- **[SHOULD] Order struct fields by alignment**: Place larger fields first to minimize padding [Mistakes#91]
   ```go
   type Good struct {
       Data  [256]byte // 256 bytes
@@ -25,7 +25,7 @@ Rule-based reference for production Go code. Every rule cites a canonical source
   }
   ```
 
-- **Pre-allocate slices with known capacity**: Avoid repeated reallocations with make [Mistakes#21]
+- **[SHOULD] Pre-allocate slices with known capacity**: Avoid repeated reallocations with make [Mistakes#21]
   ```go
   users := make([]User, 0, len(rows))
   for _, r := range rows {
@@ -33,7 +33,7 @@ Rule-based reference for production Go code. Every rule cites a canonical source
   }
   ```
 
-- **Provide map size hints**: Reduce rehashing when count is known or estimable [Mistakes#27]
+- **[SHOULD] Provide map size hints**: Reduce rehashing when count is known or estimable [Mistakes#27]
   ```go
   m := make(map[string]*User, len(ids))
   for _, id := range ids {
@@ -41,21 +41,21 @@ Rule-based reference for production Go code. Every rule cites a canonical source
   }
   ```
 
-- **Use named types for domain concepts**: Prevent accidental mixing of same-underlying types [GoBook§2]
+- **[SHOULD] Use named types for domain concepts**: Prevent accidental mixing of same-underlying types [GoBook§2]
   ```go
   type UserID string
   type OrderID string
   func GetOrder(uid UserID, oid OrderID) *Order // compiler rejects swapped args
   ```
 
-- **Design for useful zero values**: Make the zero value of your types immediately usable [EffectiveGo]
+- **[SHOULD] Design for useful zero values**: Make the zero value of your types immediately usable [EffectiveGo]
   ```go
   type Counter struct{ n int64 }
   func (c *Counter) Inc() { c.n++ } // works without constructor
   var c Counter; c.Inc()             // zero value is valid
   ```
 
-- **Use iota for enums starting with unknown zero**: Prevent uninitialized values from being valid [Mistakes#5]
+- **[SHOULD] Use iota for enums starting with unknown zero**: Prevent uninitialized values from being valid [Mistakes#5]
   ```go
   type Status int
   const (
@@ -65,9 +65,20 @@ Rule-based reference for production Go code. Every rule cites a canonical source
   )
   ```
 
+- **[SHOULD] Use go:embed for static assets**: Embed files at compile time instead of runtime I/O [EffectiveGo]
+  ```go
+  import _ "embed"
+
+  //go:embed templates/*.html
+  var templates embed.FS
+
+  //go:embed version.txt
+  var version string
+  ```
+
 ### DON'T
 
-- **Don't use generics prematurely**: Prefer concrete types until you have 3+ duplicated implementations [LearningGo§8]
+- **[SHOULD] Don't use generics prematurely**: Prefer concrete types until you have 3+ duplicated implementations [LearningGo§8]
   ```go
   // BAD: generic for a single use case
   func ProcessItems[T Item](items []T) error { ... }
@@ -75,7 +86,7 @@ Rule-based reference for production Go code. Every rule cites a canonical source
   func ProcessOrders(orders []Order) error { ... }
   ```
 
-- **Don't embed types just for convenience**: Embed only when the outer type IS-A inner type [Mistakes#9]
+- **[SHOULD] Don't embed types just for convenience**: Embed only when the outer type IS-A inner type [Mistakes#9]
   ```go
   // BAD: leaks sync.Mutex methods to callers
   type Cache struct { sync.Mutex; data map[string]string }
@@ -87,47 +98,57 @@ Rule-based reference for production Go code. Every rule cites a canonical source
 
 - **Generics for type-safe containers**: "When the same logic applies to multiple types with no behavior difference, use generics" [LearningGo§8]
 
+- **Generics with constraints for type-safe utilities**: "When writing generic functions, use constraint interfaces to restrict type parameters" [LearningGo§8]
+  ```go
+  type Number interface { ~int | ~int64 | ~float64 }
+  func Sum[T Number](vals []T) T {
+      var total T
+      for _, v := range vals { total += v }
+      return total
+  }
+  ```
+
 ---
 
 ## Section 2: Interfaces
 
 ### DO
 
-- **Accept interfaces, return structs**: Functions take interface params and return concrete types [LearningGo§7]
+- **[SHOULD] Accept interfaces, return structs**: Functions take interface params and return concrete types [LearningGo§7]
   ```go
   type Storer interface { Save(ctx context.Context, v any) error }
   func NewCache(s Storer) *Cache { return &Cache{store: s} }
   ```
 
-- **Keep interfaces small (1-3 methods)**: Compose small interfaces rather than defining large ones [Mistakes#5]
+- **[SHOULD] Keep interfaces small (1-3 methods)**: Compose small interfaces rather than defining large ones [Mistakes#5]
   ```go
   type Reader interface { Read(p []byte) (int, error) }
   type Writer interface { Write(p []byte) (int, error) }
   type ReadWriter interface { Reader; Writer }
   ```
 
-- **Define interfaces at consumer side**: The package that uses the abstraction owns the interface [EffectiveGo]
+- **[SHOULD] Define interfaces at consumer side**: The package that uses the abstraction owns the interface [EffectiveGo]
   ```go
   // internal/cache/cache.go defines what it needs
   type Storer interface { Save(ctx context.Context, id string, v any) error }
   type Cache struct { store Storer }
   ```
 
-- **Use type assertions with ok pattern**: Avoid panics on failed assertions [GoBook§7]
+- **[MUST] Use type assertions with ok pattern**: Avoid panics on failed assertions [GoBook§7]
   ```go
   if w, ok := val.(io.Writer); ok {
       w.Write(data)
   }
   ```
 
-- **Compile-time interface checks**: Verify implementations at compile time [CodeReview]
+- **[SHOULD] Compile-time interface checks**: Verify implementations at compile time [CodeReview]
   ```go
   var _ http.Handler = (*UserHandler)(nil)
   ```
 
 ### DON'T
 
-- **Don't export interfaces for implementation**: Exported interfaces force all consumers to use the same abstraction [Mistakes#6]
+- **[SHOULD] Don't export interfaces for implementation**: Exported interfaces force all consumers to use the same abstraction [Mistakes#6]
   ```go
   // BAD: package store exports interface
   type Store interface { Save(ctx context.Context, v any) error }
@@ -135,7 +156,7 @@ Rule-based reference for production Go code. Every rule cites a canonical source
   type RedisStore struct { ... }
   ```
 
-- **Don't create 5+ method interfaces**: Large interfaces reduce reusability and testability [Mistakes#5]
+- **[SHOULD] Don't create 5+ method interfaces**: Large interfaces reduce reusability and testability [Mistakes#5]
   ```go
   // BAD: too many methods
   type UserManager interface {
@@ -144,7 +165,7 @@ Rule-based reference for production Go code. Every rule cites a canonical source
   }
   ```
 
-- **Don't use interface{}/any as lazy typing**: Use specific types or small interfaces [Mistakes#7]
+- **[MUST] Don't use interface{}/any as lazy typing**: Use specific types or small interfaces [Mistakes#7]
   ```go
   // BAD: loses type safety
   func Process(data any) any { ... }
@@ -162,27 +183,27 @@ Rule-based reference for production Go code. Every rule cites a canonical source
 
 ### DO
 
-- **Always check errors**: Never discard an error return value [Mistakes#48]
+- **[MUST] Always check errors**: Never discard an error return value [Mistakes#48]
   ```go
   f, err := os.Open(path)
   if err != nil { return fmt.Errorf("open config: %w", err) }
   defer f.Close()
   ```
 
-- **Wrap errors with context using %w**: Preserve the error chain for callers [Mistakes#49]
+- **[SHOULD] Wrap errors with context using %w**: Preserve the error chain for callers [Mistakes#49]
   ```go
   user, err := s.repo.FindByID(ctx, id)
   if err != nil { return nil, fmt.Errorf("find user %s: %w", id, err) }
   ```
 
-- **Use sentinel errors for expected conditions**: Define package-level error values for known states [GoBook§5]
+- **[SHOULD] Use sentinel errors for expected conditions**: Define package-level error values for known states [GoBook§5]
   ```go
   var ErrNotFound = errors.New("not found")
   var ErrConflict = errors.New("conflict")
   if errors.Is(err, ErrNotFound) { return http.StatusNotFound }
   ```
 
-- **Use custom error types for rich context**: Carry structured data when callers need details [LearningGo§9]
+- **[MAY] Use custom error types for rich context**: Carry structured data when callers need details [LearningGo§9]
   ```go
   type ValidationError struct { Field, Message string }
   func (e *ValidationError) Error() string {
@@ -190,7 +211,7 @@ Rule-based reference for production Go code. Every rule cites a canonical source
   }
   ```
 
-- **Match errors with errors.Is/errors.As**: Never compare with == on wrapped errors [Mistakes#50]
+- **[MUST] Match errors with errors.Is/errors.As**: Never compare with == on wrapped errors [Mistakes#50]
   ```go
   var ve *ValidationError
   if errors.As(err, &ve) {
@@ -198,7 +219,7 @@ Rule-based reference for production Go code. Every rule cites a canonical source
   }
   ```
 
-- **Handle errors once**: Log or return, never both [Mistakes#48]
+- **[MUST] Handle errors once**: Log or return, never both [Mistakes#48]
   ```go
   // BAD: handled twice
   if err != nil { log.Error("fail", "err", err); return err }
@@ -208,7 +229,7 @@ Rule-based reference for production Go code. Every rule cites a canonical source
 
 ### DON'T
 
-- **Don't panic for expected errors**: Panic is for programmer bugs, not runtime conditions [GoBook§5]
+- **[MUST] Don't panic for expected errors**: Panic is for programmer bugs, not runtime conditions [GoBook§5]
   ```go
   // BAD: panic on I/O error
   data, err := os.ReadFile(path)
@@ -217,7 +238,7 @@ Rule-based reference for production Go code. Every rule cites a canonical source
   if err != nil { return nil, fmt.Errorf("read config: %w", err) }
   ```
 
-- **Don't start error messages with capital or punctuation**: Errors are often wrapped in chains [CodeReview]
+- **[SHOULD] Don't start error messages with capital or punctuation**: Errors are often wrapped in chains [CodeReview]
   ```go
   // BAD: "Query failed: connection refused"
   return fmt.Errorf("Query failed: %w", err)
@@ -225,7 +246,7 @@ Rule-based reference for production Go code. Every rule cites a canonical source
   return fmt.Errorf("query user: %w", err)
   ```
 
-- **Don't ignore deferred Close() errors**: Use errors.Join to combine with the main error [Mistakes#50]
+- **[SHOULD] Don't ignore deferred Close() errors**: Use errors.Join to combine with the main error [Mistakes#50] [Go 1.20+]
   ```go
   func writeFile(path string, data []byte) (err error) {
       f, err := os.Create(path)
@@ -246,7 +267,7 @@ Rule-based reference for production Go code. Every rule cites a canonical source
 
 ### DO
 
-- **Functional options for complex config**: Use when most parameters are optional [LearningGo§14]
+- **[MAY] Functional options for complex config**: Use when most parameters are optional [LearningGo§14]
   ```go
   type Option func(*Server)
   func WithPort(p int) Option { return func(s *Server) { s.port = p } }
@@ -255,14 +276,14 @@ Rule-based reference for production Go code. Every rule cites a canonical source
   }
   ```
 
-- **Use defer for cleanup**: Guarantee resource release on all exit paths [GoBook§5]
+- **[SHOULD] Use defer for cleanup**: Guarantee resource release on all exit paths [GoBook§5]
   ```go
   mu.Lock()
   defer mu.Unlock()
   return doWork()
   ```
 
-- **Be consistent with receiver types**: If any method needs a pointer, all methods use pointer [CodeReview]
+- **[SHOULD] Be consistent with receiver types**: If any method needs a pointer, all methods use pointer [CodeReview]
   ```go
   type User struct{ Name string }
   func (u *User) SetName(n string) { u.Name = n }
@@ -271,7 +292,7 @@ Rule-based reference for production Go code. Every rule cites a canonical source
 
 ### DON'T
 
-- **Don't use named returns for short functions**: Named returns hurt readability in simple functions [CodeReview]
+- **[SHOULD] Don't use named returns for short functions**: Named returns hurt readability in simple functions [CodeReview]
   ```go
   // BAD: unnecessary named return
   func add(a, b int) (result int) { result = a + b; return }
@@ -279,7 +300,7 @@ Rule-based reference for production Go code. Every rule cites a canonical source
   func add(a, b int) int { return a + b }
   ```
 
-- **Don't exceed 4-5 parameters**: Use a config struct or functional options instead [Mistakes#5]
+- **[SHOULD] Don't exceed 4-5 parameters**: Use a config struct or functional options instead [Mistakes#5]
   ```go
   // BAD: too many params
   func NewConn(host string, port int, user, pass string, timeout time.Duration, tls bool) {}
@@ -287,7 +308,7 @@ Rule-based reference for production Go code. Every rule cites a canonical source
   func NewConn(cfg ConnConfig) (*Conn, error) { ... }
   ```
 
-- **Don't use naked returns**: Naked returns obscure what is being returned [CodeReview]
+- **[SHOULD] Don't use naked returns**: Naked returns obscure what is being returned [CodeReview]
   ```go
   // BAD: naked return
   func find(id string) (u *User, err error) { u, err = repo.Get(id); return }
@@ -305,7 +326,7 @@ Rule-based reference for production Go code. Every rule cites a canonical source
 
 ### DO
 
-- **Every goroutine has a clear exit path**: The function that starts a goroutine owns its lifecycle [Concurrency§4]
+- **[MUST] Every goroutine has a clear exit path**: The function that starts a goroutine owns its lifecycle [Concurrency§4]
   ```go
   func startWorker(ctx context.Context, jobs <-chan Job) {
       go func() {
@@ -315,16 +336,16 @@ Rule-based reference for production Go code. Every rule cites a canonical source
   }
   ```
 
-- **Use errgroup for concurrent error handling**: Cancel remaining work on first failure [Mistakes#71]
+- **[SHOULD] Use errgroup for concurrent error handling**: Cancel remaining work on first failure [Mistakes#71]
   ```go
   g, ctx := errgroup.WithContext(ctx)
   for _, url := range urls {
-      g.Go(func() error { return fetch(ctx, url) })
+      g.Go(func() error { return fetch(ctx, url) }) // Go 1.22+: url captured correctly per iteration
   }
   if err := g.Wait(); err != nil { return err }
   ```
 
-- **Mutex for state, channel for communication**: Choose the right synchronization primitive [Concurrency§2]
+- **[SHOULD] Mutex for state, channel for communication**: Choose the right synchronization primitive [Concurrency§2]
   ```go
   // Mutex: protect shared map
   type Cache struct { mu sync.RWMutex; data map[string]string }
@@ -332,20 +353,20 @@ Rule-based reference for production Go code. Every rule cites a canonical source
   results := make(chan Result, workers)
   ```
 
-- **Channel direction in function signatures**: Restrict channel access to prevent misuse [GoBook§8]
+- **[SHOULD] Channel direction in function signatures**: Restrict channel access to prevent misuse [GoBook§8]
   ```go
   func produce(out chan<- int) { out <- 42 }
   func consume(in <-chan int)  { v := <-in }
   ```
 
-- **sync.Once for lazy initialization**: Thread-safe one-time setup [Concurrency§3]
+- **[SHOULD] sync.Once for lazy initialization**: Thread-safe one-time setup [Concurrency§3]
   ```go
   var once sync.Once
   var db *DB
   func GetDB() *DB { once.Do(func() { db = mustConnect() }); return db }
   ```
 
-- **Select with context for blocking ops**: Always include context cancellation in select [Concurrency§4]
+- **[MUST] Select with context for blocking ops**: Always include context cancellation in select [Concurrency§4]
   ```go
   select {
   case <-ctx.Done(): return ctx.Err()
@@ -356,7 +377,7 @@ Rule-based reference for production Go code. Every rule cites a canonical source
 
 ### DON'T
 
-- **Don't start goroutines in init()**: Makes testing and lifecycle control impossible [Mistakes#3]
+- **[MUST] Don't start goroutines in init()**: Makes testing and lifecycle control impossible [Mistakes#3]
   ```go
   // BAD: goroutine in init
   func init() { go backgroundProcess() }
@@ -364,7 +385,7 @@ Rule-based reference for production Go code. Every rule cites a canonical source
   func NewService(ctx context.Context) *Service { go s.run(ctx); return s }
   ```
 
-- **Don't capture loop vars by reference in goroutines**: Pre-Go 1.22 closure captures the variable, not the value [Mistakes#63]
+- **[MUST] Don't capture loop vars by reference in goroutines**: Pre-Go 1.22 closure captures the variable, not the value [Mistakes#63] [Go < 1.22 only]
   ```go
   // BAD (Go < 1.22): all goroutines share same v
   for _, v := range items { go func() { process(v) }() }
@@ -372,7 +393,7 @@ Rule-based reference for production Go code. Every rule cites a canonical source
   for _, v := range items { go func(v Item) { process(v) }(v) }
   ```
 
-- **Don't copy sync primitives**: Mutex, WaitGroup, Cond must not be copied after first use [Mistakes#72]
+- **[MUST] Don't copy sync primitives**: Mutex, WaitGroup, Cond must not be copied after first use [Mistakes#72]
   ```go
   // BAD: copying mutex
   type Cache struct { mu sync.Mutex }
@@ -381,7 +402,7 @@ Rule-based reference for production Go code. Every rule cites a canonical source
   func NewCache() *Cache { return &Cache{} }
   ```
 
-- **Don't mix mutex and channel for same data**: Pick one synchronization strategy per shared resource [Concurrency§2]
+- **[SHOULD] Don't mix mutex and channel for same data**: Pick one synchronization strategy per shared resource [Concurrency§2]
   ```go
   // BAD: mutex AND channel guarding same counter
   type Stats struct { mu sync.Mutex; count int; updates chan int }
@@ -389,7 +410,7 @@ Rule-based reference for production Go code. Every rule cites a canonical source
   type Stats struct { mu sync.Mutex; count int }
   ```
 
-- **Don't use unbuffered channels without guaranteed receiver**: Goroutine will leak if nobody reads [Mistakes#66]
+- **[MUST] Don't use unbuffered channels without guaranteed receiver**: Goroutine will leak if nobody reads [Mistakes#66]
   ```go
   // BAD: goroutine blocks forever if caller returns early
   ch := make(chan int)
@@ -411,21 +432,21 @@ Rule-based reference for production Go code. Every rule cites a canonical source
 
 ### DO
 
-- **Pass context as first param named ctx**: Standard convention across all Go libraries [Mistakes#60]
+- **[MUST] Pass context as first param named ctx**: Standard convention across all Go libraries [Mistakes#60]
   ```go
   func (r *Repo) FindUser(ctx context.Context, id string) (*User, error) {
       return r.db.QueryRowContext(ctx, query, id).Scan(...)
   }
   ```
 
-- **WithTimeout for external calls**: Bound all I/O and network operations [Mistakes#62]
+- **[SHOULD] WithTimeout for external calls**: Bound all I/O and network operations [Mistakes#62]
   ```go
   ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
   defer cancel()
   resp, err := client.Do(req.WithContext(ctx))
   ```
 
-- **Respect cancellation in loops**: Check ctx.Done() to exit long-running work early [Concurrency§4]
+- **[SHOULD] Respect cancellation in loops**: Check ctx.Done() to exit long-running work early [Concurrency§4]
   ```go
   for _, item := range items {
       if ctx.Err() != nil { return ctx.Err() }
@@ -435,7 +456,7 @@ Rule-based reference for production Go code. Every rule cites a canonical source
 
 ### DON'T
 
-- **Don't store context in structs**: Context is per-request; storing it prevents per-call cancellation [Mistakes#60]
+- **[MUST] Don't store context in structs**: Context is per-request; storing it prevents per-call cancellation [Mistakes#60]
   ```go
   // BAD: context in struct
   type Client struct { ctx context.Context; http *http.Client }
@@ -443,7 +464,7 @@ Rule-based reference for production Go code. Every rule cites a canonical source
   func (c *Client) Get(ctx context.Context, url string) (*Response, error)
   ```
 
-- **Don't use context.Value for control flow**: Values are for request-scoped metadata only [Mistakes#61]
+- **[SHOULD] Don't use context.Value for control flow**: Values are for request-scoped metadata only [Mistakes#61]
   ```go
   // BAD: using Value for business logic
   if ctx.Value("isAdmin").(bool) { allowDelete() }
@@ -453,7 +474,7 @@ Rule-based reference for production Go code. Every rule cites a canonical source
 
 ### WHEN
 
-- **Use context.WithoutCancel**: "When a deferred operation must outlive the request (e.g., async cleanup), use context.WithoutCancel (Go 1.21+)" [Mistakes#62]
+- **Use context.WithoutCancel**: "When a deferred operation must outlive the request (e.g., async cleanup), use context.WithoutCancel" [Mistakes#62] [Go 1.21+]
 
 ---
 
@@ -461,7 +482,7 @@ Rule-based reference for production Go code. Every rule cites a canonical source
 
 ### DO
 
-- **Use Go 1.22+ ServeMux patterns**: Method and path parameter routing built in [LetsGo]
+- **[SHOULD] Use Go 1.22+ ServeMux patterns**: Method and path parameter routing built in [LetsGo] [Go 1.22+]
   ```go
   mux := http.NewServeMux()
   mux.HandleFunc("GET /users/{id}", h.GetUser)
@@ -469,7 +490,7 @@ Rule-based reference for production Go code. Every rule cites a canonical source
   mux.HandleFunc("DELETE /users/{id}", h.DeleteUser)
   ```
 
-- **Middleware for cross-cutting concerns**: Standard func(http.Handler) http.Handler signature [CloudNative§4]
+- **[SHOULD] Middleware for cross-cutting concerns**: Standard func(http.Handler) http.Handler signature [CloudNative§4]
   ```go
   func Logging(log *slog.Logger) func(http.Handler) http.Handler {
       return func(next http.Handler) http.Handler {
@@ -481,14 +502,14 @@ Rule-based reference for production Go code. Every rule cites a canonical source
   }
   ```
 
-- **DisallowUnknownFields for JSON decoding**: Reject typos and unexpected input fields [LetsGo]
+- **[SHOULD] DisallowUnknownFields for JSON decoding**: Reject typos and unexpected input fields [LetsGo]
   ```go
   dec := json.NewDecoder(r.Body)
   dec.DisallowUnknownFields()
   if err := dec.Decode(&input); err != nil { /* 400 */ }
   ```
 
-- **Set server timeouts explicitly**: Prevent slow-client attacks [LetsGo]
+- **[MUST] Set server timeouts explicitly**: Prevent slow-client attacks [LetsGo]
   ```go
   srv := &http.Server{
       Addr: ":8080", Handler: mux,
@@ -499,7 +520,7 @@ Rule-based reference for production Go code. Every rule cites a canonical source
 
 ### DON'T
 
-- **Don't use default http.Client**: No timeouts means requests can hang forever [Mistakes#81]
+- **[MUST] Don't use default http.Client**: No timeouts means requests can hang forever [Mistakes#81]
   ```go
   // BAD: no timeout
   resp, err := http.Get(url)
@@ -508,7 +529,7 @@ Rule-based reference for production Go code. Every rule cites a canonical source
   resp, err := client.Get(url)
   ```
 
-- **Don't write body after error status**: WriteHeader can only be called once [LetsGo]
+- **[MUST] Don't write body after error status**: WriteHeader can only be called once [LetsGo]
   ```go
   // BAD: writes body then tries error (status 200 already sent)
   json.NewEncoder(w).Encode(data)
@@ -518,7 +539,7 @@ Rule-based reference for production Go code. Every rule cites a canonical source
   json.NewEncoder(w).Encode(data)
   ```
 
-- **Don't read request body without size limit**: Prevent memory exhaustion from large payloads [LetsGo]
+- **[MUST] Don't read request body without size limit**: Prevent memory exhaustion from large payloads [LetsGo]
   ```go
   // BAD: unbounded read
   body, _ := io.ReadAll(r.Body)
@@ -537,7 +558,7 @@ Rule-based reference for production Go code. Every rule cites a canonical source
 
 ### DO
 
-- **Constructor injection for dependencies**: Wire in main.go, no frameworks needed [CloudNative§2]
+- **[SHOULD] Constructor injection for dependencies**: Wire in main.go, no frameworks needed [CloudNative§2]
   ```go
   func main() {
       db := mustOpenDB(cfg.DSN)
@@ -547,14 +568,14 @@ Rule-based reference for production Go code. Every rule cites a canonical source
   }
   ```
 
-- **Use slog for structured logging**: Key-value pairs, not format strings [EffectiveGo]
+- **[SHOULD] Use slog for structured logging**: Key-value pairs, not format strings [EffectiveGo]
   ```go
   log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
   log.Info("request", "method", r.Method, "path", r.URL.Path,
       "status", status, "duration", time.Since(start))
   ```
 
-- **Config from environment with validation at startup**: Fail fast on missing config [CloudNative§3]
+- **[SHOULD] Config from environment with validation at startup**: Fail fast on missing config [CloudNative§3]
   ```go
   type Config struct {
       DSN  string `env:"DATABASE_URL,required"`
@@ -563,7 +584,7 @@ Rule-based reference for production Go code. Every rule cites a canonical source
   func Load() Config { var c Config; env.Parse(&c); return c }
   ```
 
-- **Separate transport/business/storage layers**: Each layer only knows the layer below via interface [CloudNative§2]
+- **[SHOULD] Separate transport/business/storage layers**: Each layer only knows the layer below via interface [CloudNative§2]
   ```go
   // transport: internal/http/handler.go — depends on Service interface
   // business:  internal/user/service.go — depends on Repository interface
@@ -572,7 +593,7 @@ Rule-based reference for production Go code. Every rule cites a canonical source
 
 ### DON'T
 
-- **Don't use global state for dependencies**: Globals prevent testing and parallel execution [Mistakes#1]
+- **[SHOULD] Don't use global state for dependencies**: Globals prevent testing and parallel execution [Mistakes#1]
   ```go
   // BAD: global DB
   var db *sql.DB
@@ -582,7 +603,7 @@ Rule-based reference for production Go code. Every rule cites a canonical source
   func (r *Repo) GetUser(ctx context.Context, id string) (*User, error)
   ```
 
-- **Don't log sensitive data**: Mask tokens, passwords, PII in log output [CloudNative§3]
+- **[MUST] Don't log sensitive data**: Mask tokens, passwords, PII in log output [CloudNative§3]
   ```go
   // BAD: logs full token
   log.Info("auth", "token", token)
@@ -600,7 +621,7 @@ Rule-based reference for production Go code. Every rule cites a canonical source
 
 ### DO
 
-- **Exponential backoff with jitter for retries**: Prevent thundering herd on failures [CloudNative§7]
+- **[SHOULD] Exponential backoff with jitter for retries**: Prevent thundering herd on failures [CloudNative§7]
   ```go
   func Retry(ctx context.Context, max int, fn func() error) error {
       for i := range max {
@@ -613,7 +634,7 @@ Rule-based reference for production Go code. Every rule cites a canonical source
   }
   ```
 
-- **OS signal handling for graceful shutdown**: Drain in-flight requests before exiting [CloudNative§5]
+- **[MUST] OS signal handling for graceful shutdown**: Drain in-flight requests before exiting [CloudNative§5]
   ```go
   ctx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
   defer stop()
@@ -623,22 +644,54 @@ Rule-based reference for production Go code. Every rule cites a canonical source
   }()
   ```
 
-- **Circuit breaker for external dependencies**: Fail fast when downstream is unhealthy [CloudNative§8]
+- **[MAY] Circuit breaker for external dependencies**: Fail fast when downstream is unhealthy [CloudNative§8]
   ```go
+  type State int
+  const (
+      Closed State = iota
+      Open
+      HalfOpen
+  )
+
   type Breaker struct {
-      mu sync.Mutex; failures, threshold int
-      state State; lastFail time.Time; cooldown time.Duration
+      mu        sync.Mutex
+      state     State
+      failures  int
+      threshold int
+      lastFail  time.Time
+      cooldown  time.Duration
   }
+
   func (b *Breaker) Do(fn func() error) error {
-      b.mu.Lock(); if b.state == Open && time.Since(b.lastFail) < b.cooldown {
-          b.mu.Unlock(); return ErrCircuitOpen }; b.mu.Unlock()
-      return fn() // + record success/failure
+      b.mu.Lock()
+      if b.state == Open {
+          if time.Since(b.lastFail) < b.cooldown {
+              b.mu.Unlock()
+              return ErrCircuitOpen
+          }
+          b.state = HalfOpen
+      }
+      b.mu.Unlock()
+
+      err := fn()
+
+      b.mu.Lock()
+      defer b.mu.Unlock()
+      if err != nil {
+          b.failures++
+          b.lastFail = time.Now()
+          if b.failures >= b.threshold { b.state = Open }
+          return err
+      }
+      b.failures = 0
+      b.state = Closed
+      return nil
   }
   ```
 
 ### DON'T
 
-- **Don't retry without backoff**: Immediate retries amplify failures under load [CloudNative§7]
+- **[SHOULD] Don't retry without backoff**: Immediate retries amplify failures under load [CloudNative§7]
   ```go
   // BAD: tight retry loop hammers failing service
   for i := 0; i < 3; i++ { err = callService(); if err == nil { break } }
@@ -646,7 +699,7 @@ Rule-based reference for production Go code. Every rule cites a canonical source
   err = Retry(ctx, 3, callService)
   ```
 
-- **Don't ignore shutdown context timeout**: Services that hang on shutdown delay deployments [CloudNative§5]
+- **[MUST] Don't ignore shutdown context timeout**: Services that hang on shutdown delay deployments [CloudNative§5]
   ```go
   // BAD: blocks forever waiting for connections
   srv.Shutdown(context.Background())
@@ -666,7 +719,7 @@ Rule-based reference for production Go code. Every rule cites a canonical source
 
 ### DO
 
-- **strings.Builder for loop concatenation**: O(n) vs O(n^2) for repeated string concat [Mistakes#39]
+- **[SHOULD] strings.Builder for loop concatenation**: O(n) vs O(n^2) for repeated string concat [Mistakes#39]
   ```go
   var b strings.Builder
   b.Grow(totalLen)
@@ -674,20 +727,20 @@ Rule-based reference for production Go code. Every rule cites a canonical source
   result := b.String()
   ```
 
-- **Pre-allocate when size is known**: Apply to slices, maps, and builders [Mistakes#21]
+- **[SHOULD] Pre-allocate when size is known**: Apply to slices, maps, and builders [Mistakes#21]
   ```go
   result := make([]string, 0, len(input))
   for _, v := range input { result = append(result, transform(v)) }
   ```
 
-- **Profile before optimizing with pprof**: Measure first, optimize second [Mistakes#95]
+- **[MUST] Profile before optimizing with pprof**: Measure first, optimize second [Mistakes#95]
   ```go
   import _ "net/http/pprof"
   // go tool pprof http://localhost:6060/debug/pprof/profile?seconds=30
   // go tool pprof http://localhost:6060/debug/pprof/heap
   ```
 
-- **sync.Pool for high-churn objects**: Reuse allocations for frequently created/destroyed objects [Concurrency§3]
+- **[MAY] sync.Pool for high-churn objects**: Reuse allocations for frequently created/destroyed objects [Concurrency§3]
   ```go
   var bufPool = sync.Pool{New: func() any { return new(bytes.Buffer) }}
   func process(data []byte) string {
@@ -698,7 +751,7 @@ Rule-based reference for production Go code. Every rule cites a canonical source
 
 ### DON'T
 
-- **Don't optimize without measurement**: Guessing at bottlenecks wastes time and adds complexity [Mistakes#95]
+- **[MUST] Don't optimize without measurement**: Guessing at bottlenecks wastes time and adds complexity [Mistakes#95]
   ```go
   // BAD: premature optimization without profiling
   // "I think this map lookup is slow" -> rewrites with unsafe
@@ -707,7 +760,7 @@ Rule-based reference for production Go code. Every rule cites a canonical source
   // go tool pprof cpu.prof
   ```
 
-- **Don't use pointer receivers for small read-only structs**: Value receivers avoid heap allocation [Mistakes#95]
+- **[SHOULD] Don't use pointer receivers for small read-only structs**: Value receivers avoid heap allocation [Mistakes#95]
   ```go
   // BAD: pointer for small immutable struct adds GC pressure
   func (p *Point) Distance(q *Point) float64 { ... }
@@ -715,7 +768,7 @@ Rule-based reference for production Go code. Every rule cites a canonical source
   func (p Point) Distance(q Point) float64 { ... }
   ```
 
-- **Don't defer in tight loops**: Defers stack until function returns, not loop iteration [Mistakes#47]
+- **[SHOULD] Don't defer in tight loops**: Defers stack until function returns, not loop iteration [Mistakes#47]
   ```go
   // BAD: all defers accumulate until function returns
   for _, f := range files { defer f.Close() }
