@@ -1,935 +1,730 @@
 ---
 name: coder
-description: "Use when writing or refactoring Go production code — types, interfaces, error handling, concurrency, context, service structure, and resilience patterns."
+description: "Use when writing or refactoring Go production code — types, interfaces, error handling, concurrency, context, HTTP, service design, resilience, and performance patterns."
 user_invocable: true
 ---
 
 # Go Coder
 
-A practical reference for production-grade Go, organized around the real-world development workflow. Every pattern cites one of five canonical sources:
+Rule-based reference for production Go code. Every rule cites a canonical source.
 
-- **[GoBook]** — *The Go Programming Language*, Donovan & Kernighan
-- **[LearningGo]** — *Learning Go*, 2nd Ed., Jon Bodner
-- **[ConcurrencyInGo]** — *Concurrency in Go*, Katherine Cox-Buday
-- **[Mistakes]** — *100 Go Mistakes and How to Avoid Them*, Teiva Harsanyi
-- **[CloudNative]** — *Cloud Native Go*, Matthew Titmus
+**Sources:** [GoBook] The Go Programming Language, [Mistakes] 100 Go Mistakes and How to Avoid Them, [Concurrency] Concurrency in Go, [LearningGo] Learning Go 2nd Ed, [CloudNative] Cloud Native Go, [LetsGo] Let's Go / Let's Go Further, [EffectiveGo] Effective Go, [CodeReview] Go Code Review Comments
 
 ---
 
-## 1. Types & Interfaces — [GoBook] Ch.6-7, [LearningGo] Ch.6-8, [Mistakes] #5-#8
+## Section 1: Types & Data Structures
 
-### Accept Interfaces, Return Structs
+### DO
 
-Define interfaces on the **consumer** side, not the producer. Return concrete types so callers get the full API.
+- **Order struct fields by alignment**: Place larger fields first to minimize padding [Mistakes#91]
+  ```go
+  type Good struct {
+      Data  [256]byte // 256 bytes
+      Count int64     // 8 bytes
+      Flag  bool      // 1 byte + 7 padding
+  }
+  ```
 
-```go
-// DO: function accepts interface, returns concrete struct
-type Storer interface {
-    Save(ctx context.Context, id string, v any) error
-}
+- **Pre-allocate slices with known capacity**: Avoid repeated reallocations with make [Mistakes#21]
+  ```go
+  users := make([]User, 0, len(rows))
+  for _, r := range rows {
+      users = append(users, toUser(r))
+  }
+  ```
 
-func NewCache(s Storer) *Cache { return &Cache{store: s} }  // accepts interface
-func NewServer(cfg Config) *Server { return &Server{cfg: cfg} }  // returns struct
+- **Provide map size hints**: Reduce rehashing when count is known or estimable [Mistakes#27]
+  ```go
+  m := make(map[string]*User, len(ids))
+  for _, id := range ids {
+      m[id] = fetchUser(id)
+  }
+  ```
 
-// Compile-time interface check
-var _ Storer = (*redisStore)(nil)
-```
+- **Use named types for domain concepts**: Prevent accidental mixing of same-underlying types [GoBook§2]
+  ```go
+  type UserID string
+  type OrderID string
+  func GetOrder(uid UserID, oid OrderID) *Order // compiler rejects swapped args
+  ```
 
-### Keep Interfaces Small
+- **Design for useful zero values**: Make the zero value of your types immediately usable [EffectiveGo]
+  ```go
+  type Counter struct{ n int64 }
+  func (c *Counter) Inc() { c.n++ } // works without constructor
+  var c Counter; c.Inc()             // zero value is valid
+  ```
 
-1-3 methods. If larger, split by consumer need. `[Mistakes] #5`
+- **Use iota for enums starting with unknown zero**: Prevent uninitialized values from being valid [Mistakes#5]
+  ```go
+  type Status int
+  const (
+      StatusUnknown Status = iota // zero value = unknown
+      StatusActive
+      StatusInactive
+  )
+  ```
 
-```go
-type Reader interface { Read(p []byte) (n int, err error) }  // 1 method — perfect
-type ReadWriter interface { Reader; Writer }                  // compose, don't bloat
-```
+### DON'T
 
-### Implicit Implementation — Design at the Consumer
+- **Don't use generics prematurely**: Prefer concrete types until you have 3+ duplicated implementations [LearningGo§8]
+  ```go
+  // BAD: generic for a single use case
+  func ProcessItems[T Item](items []T) error { ... }
+  // GOOD: concrete until proven need
+  func ProcessOrders(orders []Order) error { ... }
+  ```
 
-Don't define an interface in the same package as its implementation. Define it where it's used.
+- **Don't embed types just for convenience**: Embed only when the outer type IS-A inner type [Mistakes#9]
+  ```go
+  // BAD: leaks sync.Mutex methods to callers
+  type Cache struct { sync.Mutex; data map[string]string }
+  // GOOD: unexported field hides implementation
+  type Cache struct { mu sync.Mutex; data map[string]string }
+  ```
 
-```go
-// internal/store/store.go — defines concrete type
-type RedisStore struct { ... }
-func (r *RedisStore) Save(...) error { ... }
+### WHEN
 
-// internal/cache/cache.go — defines interface it needs
-type Storer interface { Save(ctx context.Context, id string, v any) error }
-type Cache struct { store Storer }
-```
-
-### Embedding for Composition
-
-```go
-type LoggedStore struct {
-    Storer                // embed interface, not struct
-    log *slog.Logger
-}
-
-func (l *LoggedStore) Save(ctx context.Context, id string, v any) error {
-    l.log.Info("save", "id", id)
-    return l.Storer.Save(ctx, id, v)
-}
-```
-
-### Generics — [LearningGo] Ch.8
-
-Use for type-safe containers and algorithms (same logic, different types). Avoid for behavior differences — use interfaces there.
-
-```go
-// Named constraint — prefer over inline unions
-type Number interface { ~int | ~int64 | ~float64 }
-
-func Sum[T Number](vals []T) T {
-    var total T
-    for _, v := range vals { total += v }
-    return total
-}
-
-// Methods cannot have type parameters — use functions
-// WRONG: func (s *Store) Get[T any](id string) T
-// RIGHT: func Get[T any](s *Store, id string) T
-```
-
----
-
-## 2. Error Handling — [GoBook] Ch.5, [LearningGo] Ch.9, [Mistakes] #48-#53
-
-### %w vs %v
-
-```go
-// DO: %w preserves chain — errors.Is/errors.As work on callers
-return fmt.Errorf("query user %s: %w", id, err)
-
-// DON'T: %v breaks chain — callers cannot inspect cause
-return fmt.Errorf("query user: %v", err)  // errors.Is fails upstream
-```
-
-### errors.Is / errors.As
-
-```go
-// errors.Is: value/identity check
-if errors.Is(err, ErrNotFound) {
-    return http.StatusNotFound, nil
-}
-
-// errors.As: type extraction — gets structured data from error
-var ve *ValidationError
-if errors.As(err, &ve) {
-    return http.StatusBadRequest, ve.Fields
-}
-```
-
-### Sentinel vs Custom Error Type
-
-```go
-// Sentinel: when callers only need to identify the error
-var ErrNotFound = errors.New("not found")
-var ErrConflict = errors.New("conflict")
-
-// Custom type: when callers need structured data from the error
-type ValidationError struct {
-    Field   string
-    Message string
-}
-func (e *ValidationError) Error() string {
-    return fmt.Sprintf("validation failed on %s: %s", e.Field, e.Message)
-}
-```
-
-### errors.Join — [Mistakes] #50 (Go 1.20+)
-
-```go
-// Combine multiple independent errors
-var errs []error
-if err := validateName(name); err != nil { errs = append(errs, err) }
-if err := validateEmail(email); err != nil { errs = append(errs, err) }
-if err := errors.Join(errs...); err != nil { return err }
-```
-
-### Goroutine Error Collection
-
-Never let goroutines silently swallow errors. Use `errgroup` for parallel tasks that cancel on first error (see Section 4 for full `errgroup` vs `WaitGroup` comparison).
-
-### Panic — Programmer Bugs Only
-
-```go
-// DO: panic for invariant violations and nil callbacks
-func NewWorker(fn func()) *Worker {
-    if fn == nil { panic("fn must not be nil") }
-    return &Worker{fn: fn}
-}
-
-// DON'T: panic for recoverable errors (I/O, validation, network)
-```
+- **Generics for type-safe containers**: "When the same logic applies to multiple types with no behavior difference, use generics" [LearningGo§8]
 
 ---
 
-## 3. Context — [GoBook] Ch.8, [LearningGo] Ch.12, [Mistakes] #60-#63
+## Section 2: Interfaces
 
-### Rules
+### DO
 
-- Always first parameter, named `ctx`. Never store in a struct. `[Mistakes] #60`
-- Always `defer cancel()` immediately after `WithCancel`/`WithTimeout`/`WithDeadline`. `[Mistakes] #62`
+- **Accept interfaces, return structs**: Functions take interface params and return concrete types [LearningGo§7]
+  ```go
+  type Storer interface { Save(ctx context.Context, v any) error }
+  func NewCache(s Storer) *Cache { return &Cache{store: s} }
+  ```
 
-```go
-// DO
-func (r *Repo) FindUser(ctx context.Context, id string) (*User, error)
+- **Keep interfaces small (1-3 methods)**: Compose small interfaces rather than defining large ones [Mistakes#5]
+  ```go
+  type Reader interface { Read(p []byte) (int, error) }
+  type Writer interface { Write(p []byte) (int, error) }
+  type ReadWriter interface { Reader; Writer }
+  ```
 
-// DON'T — context in struct prevents per-call cancellation
-type Client struct { ctx context.Context }
-```
+- **Define interfaces at consumer side**: The package that uses the abstraction owns the interface [EffectiveGo]
+  ```go
+  // internal/cache/cache.go defines what it needs
+  type Storer interface { Save(ctx context.Context, id string, v any) error }
+  type Cache struct { store Storer }
+  ```
 
-### WithTimeout vs WithDeadline vs WithCancel
+- **Use type assertions with ok pattern**: Avoid panics on failed assertions [GoBook§7]
+  ```go
+  if w, ok := val.(io.Writer); ok {
+      w.Write(data)
+  }
+  ```
 
-```go
-// WithTimeout: I/O, external calls — relative duration
-ctx, cancel := context.WithTimeout(parent, 5*time.Second)
-defer cancel()
+- **Compile-time interface checks**: Verify implementations at compile time [CodeReview]
+  ```go
+  var _ http.Handler = (*UserHandler)(nil)
+  ```
 
-// WithDeadline: absolute time (e.g., SLA boundary)
-ctx, cancel := context.WithDeadline(parent, deadline)
-defer cancel()
+### DON'T
 
-// WithCancel: lifecycle control — cancel when work is done
-ctx, cancel := context.WithCancel(parent)
-defer cancel()
-go worker(ctx)
-```
+- **Don't export interfaces for implementation**: Exported interfaces force all consumers to use the same abstraction [Mistakes#6]
+  ```go
+  // BAD: package store exports interface
+  type Store interface { Save(ctx context.Context, v any) error }
+  // GOOD: package store exports struct, consumer defines interface
+  type RedisStore struct { ... }
+  ```
 
-### Context Values — Unexported Key Types
+- **Don't create 5+ method interfaces**: Large interfaces reduce reusability and testability [Mistakes#5]
+  ```go
+  // BAD: too many methods
+  type UserManager interface {
+      Create(u User) error; Update(u User) error; Delete(id string) error
+      Find(id string) (*User, error); List() ([]User, error); Count() (int, error)
+  }
+  ```
 
-```go
-// DO: unexported key type prevents collision across packages
-type ctxKey string
-const requestIDKey ctxKey = "requestID"
+- **Don't use interface{}/any as lazy typing**: Use specific types or small interfaces [Mistakes#7]
+  ```go
+  // BAD: loses type safety
+  func Process(data any) any { ... }
+  // GOOD: explicit types
+  func Process(data Input) Output { ... }
+  ```
 
-func WithRequestID(ctx context.Context, id string) context.Context {
-    return context.WithValue(ctx, requestIDKey, id)
-}
-func RequestIDFrom(ctx context.Context) (string, bool) {
-    v, ok := ctx.Value(requestIDKey).(string)
-    return v, ok
-}
+### WHEN
 
-// DON'T: string key collides with other packages
-ctx = context.WithValue(ctx, "requestID", id)  // BAD
-```
-
-Context values are for request-scoped data only: trace IDs, auth tokens, deadlines. Not for optional function parameters.
-
-### Checking Cancellation
-
-```go
-// In loops and long operations
-for {
-    select {
-    case <-ctx.Done(): return ctx.Err()
-    case item := <-queue: process(item)
-    }
-}
-
-// Before expensive operations
-if ctx.Err() != nil { return ctx.Err() }
-result, err := expensiveOp(ctx)
-```
+- **Return interface for multiple implementations**: "When a factory must return different concrete types based on config, return an interface" [LearningGo§7]
 
 ---
 
-## 4. Concurrency — [GoBook] Ch.8-9, [ConcurrencyInGo] Ch.2-5, [Mistakes] #57-#73
+## Section 3: Error Handling
 
-### Goroutine Lifecycle — [ConcurrencyInGo] Ch.4
+### DO
 
-Never start a goroutine without knowing when it exits. The function that starts a goroutine owns its lifecycle.
+- **Always check errors**: Never discard an error return value [Mistakes#48]
+  ```go
+  f, err := os.Open(path)
+  if err != nil { return fmt.Errorf("open config: %w", err) }
+  defer f.Close()
+  ```
 
-```go
-func startWorker(ctx context.Context, jobs <-chan Job) {
-    go func() {
-        for {
-            select {
-            case <-ctx.Done(): return       // exits cleanly on cancellation
-            case j, ok := <-jobs:
-                if !ok { return }           // exits when channel closed
-                process(j)
-            }
-        }
-    }()
-}
-```
+- **Wrap errors with context using %w**: Preserve the error chain for callers [Mistakes#49]
+  ```go
+  user, err := s.repo.FindByID(ctx, id)
+  if err != nil { return nil, fmt.Errorf("find user %s: %w", id, err) }
+  ```
 
-### Pipeline Pattern — [ConcurrencyInGo] Ch.4
+- **Use sentinel errors for expected conditions**: Define package-level error values for known states [GoBook§5]
+  ```go
+  var ErrNotFound = errors.New("not found")
+  var ErrConflict = errors.New("conflict")
+  if errors.Is(err, ErrNotFound) { return http.StatusNotFound }
+  ```
 
-Chain stages with channels. Each stage reads from upstream and writes to downstream. Always propagate cancellation.
+- **Use custom error types for rich context**: Carry structured data when callers need details [LearningGo§9]
+  ```go
+  type ValidationError struct { Field, Message string }
+  func (e *ValidationError) Error() string {
+      return fmt.Sprintf("validation: %s: %s", e.Field, e.Message)
+  }
+  ```
 
-```go
-func generate(ctx context.Context, nums ...int) <-chan int {
-    out := make(chan int)
-    go func() {
-        defer close(out)
-        for _, n := range nums {
-            select {
-            case <-ctx.Done(): return
-            case out <- n:
-            }
-        }
-    }()
-    return out
-}
+- **Match errors with errors.Is/errors.As**: Never compare with == on wrapped errors [Mistakes#50]
+  ```go
+  var ve *ValidationError
+  if errors.As(err, &ve) {
+      return http.StatusBadRequest, ve.Field
+  }
+  ```
 
-func square(ctx context.Context, in <-chan int) <-chan int {
-    out := make(chan int)
-    go func() {
-        defer close(out)
-        for n := range in {
-            select {
-            case <-ctx.Done(): return
-            case out <- n * n:
-            }
-        }
-    }()
-    return out
-}
-```
+- **Handle errors once**: Log or return, never both [Mistakes#48]
+  ```go
+  // BAD: handled twice
+  if err != nil { log.Error("fail", "err", err); return err }
+  // GOOD: return with context, let caller decide
+  if err != nil { return fmt.Errorf("save order: %w", err) }
+  ```
 
-### Fan-out / Fan-in — [ConcurrencyInGo] Ch.4
+### DON'T
 
-```go
-// Fan-out: distribute work to N workers
-func fanOut(ctx context.Context, in <-chan Work, n int) []<-chan Result {
-    channels := make([]<-chan Result, n)
-    for i := range n { channels[i] = process(ctx, in) }  // Go 1.22+: range over integer
-    return channels
-}
+- **Don't panic for expected errors**: Panic is for programmer bugs, not runtime conditions [GoBook§5]
+  ```go
+  // BAD: panic on I/O error
+  data, err := os.ReadFile(path)
+  if err != nil { panic(err) }
+  // GOOD: return error
+  if err != nil { return nil, fmt.Errorf("read config: %w", err) }
+  ```
 
-// Fan-in: merge N result channels into one
-func merge(ctx context.Context, channels ...<-chan Result) <-chan Result {
-    var wg sync.WaitGroup
-    out := make(chan Result)
-    forward := func(c <-chan Result) {
-        defer wg.Done()
-        for r := range c {
-            select {
-            case <-ctx.Done(): return
-            case out <- r:
-            }
-        }
-    }
-    wg.Add(len(channels))
-    for _, c := range channels { go forward(c) }
-    go func() { wg.Wait(); close(out) }()
-    return out
-}
-```
+- **Don't start error messages with capital or punctuation**: Errors are often wrapped in chains [CodeReview]
+  ```go
+  // BAD: "Query failed: connection refused"
+  return fmt.Errorf("Query failed: %w", err)
+  // GOOD: "query user: connection refused"
+  return fmt.Errorf("query user: %w", err)
+  ```
 
-### errgroup vs sync.WaitGroup — [Mistakes] #71
+- **Don't ignore deferred Close() errors**: Use errors.Join to combine with the main error [Mistakes#50]
+  ```go
+  func writeFile(path string, data []byte) (err error) {
+      f, err := os.Create(path)
+      if err != nil { return err }
+      defer func() { err = errors.Join(err, f.Close()) }()
+      _, err = f.Write(data)
+      return err
+  }
+  ```
 
-| Use `errgroup` | Use `WaitGroup + chan error` |
-|---|---|
-| Independent tasks — first error cancels all | Worker pool that must drain jobs even after error |
-| Parallel fetch where any failure aborts | Pipeline stages where stopping early blocks senders |
+### WHEN
 
-```go
-// errgroup: parallel API calls — first error cancels all
-g, ctx := errgroup.WithContext(ctx)
-for _, url := range urls {
-    url := url  // capture range variable (required in Go < 1.22)
-    g.Go(func() error { return fetch(ctx, url) })
-}
-if err := g.Wait(); err != nil { return err }
-
-// WaitGroup: worker pool — must drain all jobs
-errCh := make(chan error, len(jobs))
-var wg sync.WaitGroup
-for range workers {  // Go 1.22+: range over integer
-    wg.Add(1)
-    go func() {
-        defer wg.Done()
-        for job := range jobs {
-            if err := process(job); err != nil {
-                select { case errCh <- err: default: }
-            }
-        }
-    }()
-}
-go func() { wg.Wait(); close(errCh) }()
-// caller: for err := range errCh { ... }  // drain errors after goroutines finish
-```
-
-### Mutex vs Channel — [ConcurrencyInGo] Ch.2
-
-| **Mutex** | **Channel** |
-|---|---|
-| Protecting shared state (map, counter, cache) | Transferring data ownership between goroutines |
-| Short critical sections | Signaling events, coordinating pipeline stages |
-
-> **Race detection** → See `/golang:tester` Section 4. Always run `go test -race ./...`.
-
-### Goroutine Leak Prevention — [Mistakes] #63
-
-```go
-// LEAK: unbuffered channel, nobody reads → goroutine blocked forever
-ch := make(chan int)
-go func() { ch <- compute() }()
-
-// OK: buffered — goroutine can complete even if nobody reads immediately
-ch := make(chan int, 1)
-go func() { ch <- compute() }()
-
-// OK: context cancellation
-go func() {
-    select {
-    case ch <- compute():
-    case <-ctx.Done():
-    }
-}()
-```
-
-### sync.Once / sync.Pool
-
-```go
-// sync.Once: one-time initialization (thread-safe)
-var (
-    once     sync.Once
-    instance *DB
-)
-func GetDB() *DB {
-    once.Do(func() { instance = mustConnect() })
-    return instance
-}
-
-// sync.Pool: reduce allocations for frequently created/destroyed objects
-var pool = sync.Pool{New: func() any { return new(bytes.Buffer) }}
-
-func process(data []byte) string {
-    buf := pool.Get().(*bytes.Buffer)
-    defer func() { buf.Reset(); pool.Put(buf) }()
-    buf.Write(data)
-    return buf.String()
-}
-```
+- **Use %v to intentionally hide cause**: "When error wrapping would leak internal implementation, use %v instead of %w" [Mistakes#49]
 
 ---
 
-## 5. Service Design — [CloudNative] Ch.2-5, [LearningGo] Ch.14, [GoBook] Ch.10
+## Section 4: Functions & Methods
 
-### Project Structure — [golang-standards/project-layout](https://github.com/golang-standards/project-layout)
+### DO
 
-#### Go 핵심 디렉토리
+- **Functional options for complex config**: Use when most parameters are optional [LearningGo§14]
+  ```go
+  type Option func(*Server)
+  func WithPort(p int) Option { return func(s *Server) { s.port = p } }
+  func NewServer(opts ...Option) *Server {
+      s := &Server{port: 8080}; for _, o := range opts { o(s) }; return s
+  }
+  ```
 
-```
-cmd/        — 바이너리 진입점. 서브디렉토리 하나당 실행 파일 하나 (cmd/server/main.go)
-              비즈니스 로직은 최소화 — 복잡한 코드는 internal/ 또는 pkg/에 위치
-internal/   — Go 컴파일러가 외부 임포트를 차단하는 비공개 패키지
-              internal/app/ (앱 로직), internal/pkg/ (공유 유틸) 으로 세분화 가능
-pkg/        — 외부 프로젝트가 사용해도 되는 공개 라이브러리
-              노출 의도를 명시적으로 신호함. 불확실하면 internal/ 사용
-vendor/     — go mod vendor로 관리되는 의존성 스냅샷
-              라이브러리가 아닌 애플리케이션에만 커밋. Go 1.13+ 모듈 프록시로 대체 가능
-              현재 Go 커뮤니티 추세: 모듈 프록시(GOPROXY) 사용 시 vendor/ 커밋 불필요
-```
+- **Use defer for cleanup**: Guarantee resource release on all exit paths [GoBook§5]
+  ```go
+  mu.Lock()
+  defer mu.Unlock()
+  return doWork()
+  ```
 
-#### 서비스 / 웹 애플리케이션
+- **Be consistent with receiver types**: If any method needs a pointer, all methods use pointer [CodeReview]
+  ```go
+  type User struct{ Name string }
+  func (u *User) SetName(n string) { u.Name = n }
+  func (u *User) String() string   { return u.Name } // pointer too
+  ```
 
-```
-api/        — OpenAPI/Swagger 스펙, JSON 스키마, Protocol Buffer 정의 파일
-web/        — 정적 웹 에셋, 서버 사이드 템플릿, SPA
-```
+### DON'T
 
-#### 공통 애플리케이션 디렉토리
+- **Don't use named returns for short functions**: Named returns hurt readability in simple functions [CodeReview]
+  ```go
+  // BAD: unnecessary named return
+  func add(a, b int) (result int) { result = a + b; return }
+  // GOOD: direct return
+  func add(a, b int) int { return a + b }
+  ```
 
-```
-configs/    — 설정 파일 템플릿 및 기본값 (confd, consul-template 포함)
-init/       — systemd, upstart, supervisord 등 프로세스 관리자 설정
-scripts/    — 빌드, 설치, 분석 스크립트. 루트 Makefile을 단순하게 유지
-build/      — 패키징 및 CI 설정
-              build/package/ — Docker, RPM 등 컨테이너/OS 패키지
-              build/ci/      — CI 파이프라인 설정 (Jenkins, GitHub Actions 등)
-deployments/ — IaaS/PaaS/오케스트레이션 설정 (docker-compose, k8s, Terraform)
-test/       — 추가 외부 테스트 앱 및 테스트 데이터 (Go 표준 _test.go 파일과 별개)
-```
+- **Don't exceed 4-5 parameters**: Use a config struct or functional options instead [Mistakes#5]
+  ```go
+  // BAD: too many params
+  func NewConn(host string, port int, user, pass string, timeout time.Duration, tls bool) {}
+  // GOOD: config struct
+  func NewConn(cfg ConnConfig) (*Conn, error) { ... }
+  ```
 
-#### 지원 디렉토리
+- **Don't use naked returns**: Naked returns obscure what is being returned [CodeReview]
+  ```go
+  // BAD: naked return
+  func find(id string) (u *User, err error) { u, err = repo.Get(id); return }
+  // GOOD: explicit return
+  func find(id string) (*User, error) { return repo.Get(id) }
+  ```
 
-```
-docs/       — 설계 문서 및 사용자 문서 (godoc 생성 문서 외)
-tools/      — 이 프로젝트를 위한 지원 도구. /pkg, /internal 임포트 가능
-examples/   — 애플리케이션 및 라이브러리 사용 예제
-third_party/ — 외부 헬퍼, 포크된 코드, 서드파티 유틸리티
-githooks/   — Git 훅 스크립트
-assets/     — 저장소 이미지, 로고 등 관련 에셋
-website/    — GitHub Pages 미사용 시 프로젝트 웹사이트 데이터
-```
+### WHEN
 
-#### 피해야 할 디렉토리
-
-```
-src/        — Go 프로젝트에서 사용 금지. Java 스타일 구조로 오해를 유발
-              $GOPATH/src 와 혼동되어 모듈 경로가 복잡해짐
-```
-
-#### 실전 예시
-
-```go
-// cmd/server/main.go — 의존성 연결(wiring), 서버 시작
-// cmd/worker/main.go — 별도 바이너리: 백그라운드 작업자
-
-// internal/user/     — 도메인 로직: User, UserStore, UserService
-// internal/http/     — HTTP 핸들러, 미들웨어, 라우팅
-// internal/config/   — 설정 로드 및 검증
-
-// pkg/middleware/    — 재사용 가능한 미들웨어 (다른 프로젝트에서도 사용 가능)
-// pkg/errors/        — 공개 에러 타입
-
-// api/openapi.yaml   — API 스펙
-// configs/app.yaml   — 기본 설정값
-// deployments/k8s/   — Kubernetes 매니페스트
-// scripts/build.sh   — 빌드 스크립트
-```
-
-### Package Naming — [GoBook] Ch.10
-
-- Lowercase, singular, no underscores
-- No stutter: package name should not repeat in exported names
-
-```go
-package user   // NOT users, NOT userPkg
-
-// DO: user.Record, user.Store, user.New
-// DON'T: user.UserRecord, user.UserStore, user.NewUser
-```
-
-### HTTP Handlers — Dependencies via Closure or Receiver
-
-```go
-// DO: dependencies injected via receiver
-type UserHandler struct {
-    store UserStore
-    log   *slog.Logger
-}
-
-func (h *UserHandler) GetUser(w http.ResponseWriter, r *http.Request) {
-    id := r.PathValue("id")
-    u, err := h.store.FindByID(r.Context(), id)
-    if err != nil {
-        if errors.Is(err, ErrNotFound) {
-            http.Error(w, "not found", http.StatusNotFound)
-            return
-        }
-        http.Error(w, "internal error", http.StatusInternalServerError)
-        return
-    }
-    w.Header().Set("Content-Type", "application/json")
-    json.NewEncoder(w).Encode(u)
-}
-
-// DON'T: global state in handlers
-var globalDB *sql.DB  // BAD: untestable, not swappable
-```
-
-### Middleware — [CloudNative]
-
-```go
-// Standard signature: func(http.Handler) http.Handler
-func Logging(log *slog.Logger) func(http.Handler) http.Handler {
-    return func(next http.Handler) http.Handler {
-        return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-            start := time.Now()
-            next.ServeHTTP(w, r)
-            log.Info("request",
-                "method", r.Method,
-                "path", r.URL.Path,
-                "duration", time.Since(start),
-            )
-        })
-    }
-}
-
-// Chain middleware
-mux := http.NewServeMux()
-handler := Logging(log)(Recovery()(mux))
-```
-
-### Functional Options vs Config Struct — [LearningGo]
-
-```go
-// Functional Options: when most params are optional
-type Option func(*Server)
-func WithPort(p uint16) Option      { return func(s *Server) { s.port = p } }
-func WithTimeout(d time.Duration) Option { return func(s *Server) { s.timeout = d } }
-
-func NewServer(opts ...Option) *Server {
-    s := &Server{port: 8080, timeout: 30 * time.Second}
-    for _, o := range opts { o(s) }
-    return s
-}
-// Usage: NewServer(WithPort(9090), WithTimeout(60*time.Second))
-
-// Config Struct: when settings come from file/env or >3 required fields
-type Config struct {
-    Host    string        `yaml:"host"`
-    Port    uint16        `yaml:"port"`
-    Timeout time.Duration `yaml:"timeout"`
-}
-func New(cfg Config) *Server { return &Server{cfg: cfg} }
-```
-
-### Constructor Naming
-
-```go
-func NewServer(opts ...Option) *Server       // primary constructor
-func NewServerFromConfig(cfg Config) *Server // alternative source
-// Return (T, error) when construction can fail; T when it cannot
-func NewPool(cfg Config) (*Pool, error)
-```
-
-### Structured Logging with slog — Go 1.21+
-
-```go
-// Setup: create logger with handler
-log := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
-    Level: slog.LevelInfo,
-}))
-
-// Structured fields — key-value pairs
-log.Info("request completed",
-    "method", r.Method,
-    "path", r.URL.Path,
-    "status", 200,
-    "duration", time.Since(start),
-)
-
-// Group related fields
-log.With(slog.Group("user",
-    "id", userID,
-    "role", "admin",
-)).Info("user action", "action", "login")
-
-// Error level with error field
-log.Error("db query failed", "err", err, "query", "SELECT ...")
-```
-
-Inject logger via constructor — never use `slog.Default()` in library code.
-
-### Dependency Injection — Constructor Wiring
-
-Wire dependencies manually in `cmd/server/main.go`. No framework needed for most services.
-
-```go
-// cmd/server/main.go — the composition root
-func main() {
-    cfg := config.Load()
-    log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
-
-    db, err := sql.Open("postgres", cfg.DSN)
-    if err != nil { log.Error("db connect", "err", err); os.Exit(1) }
-
-    // Wire dependencies bottom-up
-    userStore := postgres.NewUserStore(db)
-    userSvc := user.NewService(userStore, log)
-    userHandler := http.NewUserHandler(userSvc, log)
-
-    mux := http.NewServeMux()
-    userHandler.Register(mux)
-
-    srv := &http.Server{Addr: cfg.Addr, Handler: Logging(log)(mux)}
-    run(srv)
-}
-```
-
-**Rule:** Each layer only knows about the layer below it. `http.UserHandler` knows `user.Service` interface; it does not know `postgres.UserStore`.
-
-### Configuration Loading
-
-```go
-// internal/config/config.go
-type Config struct {
-    Addr    string        `env:"ADDR"       envDefault:":8080"`
-    DSN     string        `env:"DATABASE_URL,required"`
-    Timeout time.Duration `env:"TIMEOUT"    envDefault:"30s"`
-    Debug   bool          `env:"DEBUG"      envDefault:"false"`
-}
-
-func Load() Config {
-    var cfg Config
-    if err := env.Parse(&cfg); err != nil {
-        // Fatal at startup — config errors are programmer/ops errors
-        slog.Error("config error", "err", err)
-        os.Exit(1)
-    }
-    return cfg
-}
-```
-
-`go get github.com/caarlos0/env/v11`
-
-**Validate at startup, not at use.** If a required env var is missing, fail fast with a clear message.
+- **Use named returns for deferred error handling**: "In functions where defer modifies the return value, named returns are required" [Mistakes#47]
 
 ---
 
-> **Testing patterns** → See `/golang:tester` for table-driven tests, benchmarks, fuzzing, mocks, httptest, and coverage.
+## Section 5: Concurrency
+
+### DO
+
+- **Every goroutine has a clear exit path**: The function that starts a goroutine owns its lifecycle [Concurrency§4]
+  ```go
+  func startWorker(ctx context.Context, jobs <-chan Job) {
+      go func() {
+          for { select { case <-ctx.Done(): return; case j, ok := <-jobs:
+              if !ok { return }; process(j) } }
+      }()
+  }
+  ```
+
+- **Use errgroup for concurrent error handling**: Cancel remaining work on first failure [Mistakes#71]
+  ```go
+  g, ctx := errgroup.WithContext(ctx)
+  for _, url := range urls {
+      g.Go(func() error { return fetch(ctx, url) })
+  }
+  if err := g.Wait(); err != nil { return err }
+  ```
+
+- **Mutex for state, channel for communication**: Choose the right synchronization primitive [Concurrency§2]
+  ```go
+  // Mutex: protect shared map
+  type Cache struct { mu sync.RWMutex; data map[string]string }
+  // Channel: transfer ownership
+  results := make(chan Result, workers)
+  ```
+
+- **Channel direction in function signatures**: Restrict channel access to prevent misuse [GoBook§8]
+  ```go
+  func produce(out chan<- int) { out <- 42 }
+  func consume(in <-chan int)  { v := <-in }
+  ```
+
+- **sync.Once for lazy initialization**: Thread-safe one-time setup [Concurrency§3]
+  ```go
+  var once sync.Once
+  var db *DB
+  func GetDB() *DB { once.Do(func() { db = mustConnect() }); return db }
+  ```
+
+- **Select with context for blocking ops**: Always include context cancellation in select [Concurrency§4]
+  ```go
+  select {
+  case <-ctx.Done(): return ctx.Err()
+  case item := <-queue: process(item)
+  case results <- output:
+  }
+  ```
+
+### DON'T
+
+- **Don't start goroutines in init()**: Makes testing and lifecycle control impossible [Mistakes#3]
+  ```go
+  // BAD: goroutine in init
+  func init() { go backgroundProcess() }
+  // GOOD: start in main or constructor with context
+  func NewService(ctx context.Context) *Service { go s.run(ctx); return s }
+  ```
+
+- **Don't capture loop vars by reference in goroutines**: Pre-Go 1.22 closure captures the variable, not the value [Mistakes#63]
+  ```go
+  // BAD (Go < 1.22): all goroutines share same v
+  for _, v := range items { go func() { process(v) }() }
+  // GOOD: pass as argument
+  for _, v := range items { go func(v Item) { process(v) }(v) }
+  ```
+
+- **Don't copy sync primitives**: Mutex, WaitGroup, Cond must not be copied after first use [Mistakes#72]
+  ```go
+  // BAD: copying mutex
+  type Cache struct { mu sync.Mutex }
+  c2 := c1 // copies mutex — undefined behavior
+  // GOOD: use pointer or never copy
+  func NewCache() *Cache { return &Cache{} }
+  ```
+
+- **Don't mix mutex and channel for same data**: Pick one synchronization strategy per shared resource [Concurrency§2]
+  ```go
+  // BAD: mutex AND channel guarding same counter
+  type Stats struct { mu sync.Mutex; count int; updates chan int }
+  // GOOD: one mechanism
+  type Stats struct { mu sync.Mutex; count int }
+  ```
+
+- **Don't use unbuffered channels without guaranteed receiver**: Goroutine will leak if nobody reads [Mistakes#66]
+  ```go
+  // BAD: goroutine blocks forever if caller returns early
+  ch := make(chan int)
+  go func() { ch <- compute() }()
+  // GOOD: buffer of 1 lets goroutine complete
+  ch := make(chan int, 1)
+  go func() { ch <- compute() }()
+  ```
+
+### WHEN
+
+- **Use WaitGroup over errgroup**: "When workers must drain all jobs even after errors, use WaitGroup + error channel" [Concurrency§4]
+- Cross-ref: See `/golang:reviewer` Section 2 for concurrency code review checks
+- Cross-ref: See `/golang:tester` Section 8 for race detection and concurrent testing
 
 ---
 
-## 6. Resilience — [CloudNative] Ch.5-8, [ConcurrencyInGo] Ch.5
+## Section 6: Context
 
-### Retry with Exponential Backoff + Jitter — [CloudNative] Ch.7
+### DO
 
-Jitter prevents thundering herd: all retrying clients desynchronize.
+- **Pass context as first param named ctx**: Standard convention across all Go libraries [Mistakes#60]
+  ```go
+  func (r *Repo) FindUser(ctx context.Context, id string) (*User, error) {
+      return r.db.QueryRowContext(ctx, query, id).Scan(...)
+  }
+  ```
 
-```go
-func Retry(ctx context.Context, maxAttempts int, fn func() error) error {
-    var err error
-    for i := range maxAttempts {
-        if ctx.Err() != nil { return ctx.Err() }
-        if err = fn(); err == nil { return nil }
-        if i == maxAttempts-1 { break }
-        backoff := time.Duration(1<<uint(i)) * 100 * time.Millisecond
-        jitter := time.Duration(rand.Int63n(int64(backoff / 2)))
-        select {
-        case <-ctx.Done(): return ctx.Err()
-        case <-time.After(backoff + jitter):
-        }
-    }
-    return fmt.Errorf("after %d attempts: %w", maxAttempts, err)
-}
-```
+- **WithTimeout for external calls**: Bound all I/O and network operations [Mistakes#62]
+  ```go
+  ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+  defer cancel()
+  resp, err := client.Do(req.WithContext(ctx))
+  ```
 
-### Circuit Breaker — [CloudNative] Ch.8
+- **Respect cancellation in loops**: Check ctx.Done() to exit long-running work early [Concurrency§4]
+  ```go
+  for _, item := range items {
+      if ctx.Err() != nil { return ctx.Err() }
+      if err := process(ctx, item); err != nil { return err }
+  }
+  ```
 
-State machine: `Closed` (normal) → `Open` (failing, reject fast) → `Half-Open` (testing recovery).
+### DON'T
 
-```go
-type State int
-const (
-    StateClosed   State = iota  // requests pass through
-    StateOpen                    // requests rejected immediately
-    StateHalfOpen               // probing — note: this simplified example does not enforce single-probe semantics
-)
+- **Don't store context in structs**: Context is per-request; storing it prevents per-call cancellation [Mistakes#60]
+  ```go
+  // BAD: context in struct
+  type Client struct { ctx context.Context; http *http.Client }
+  // GOOD: context per method call
+  func (c *Client) Get(ctx context.Context, url string) (*Response, error)
+  ```
 
-type CircuitBreaker struct {
-    mu          sync.Mutex
-    state       State
-    failures    int
-    threshold   int
-    lastFailure time.Time
-    cooldown    time.Duration
-}
+- **Don't use context.Value for control flow**: Values are for request-scoped metadata only [Mistakes#61]
+  ```go
+  // BAD: using Value for business logic
+  if ctx.Value("isAdmin").(bool) { allowDelete() }
+  // GOOD: explicit parameter
+  func Delete(ctx context.Context, isAdmin bool) error
+  ```
 
-func (cb *CircuitBreaker) Do(fn func() error) error {
-    cb.mu.Lock()
-    if cb.state == StateOpen {
-        if time.Since(cb.lastFailure) > cb.cooldown {
-            cb.state = StateHalfOpen
-        } else {
-            cb.mu.Unlock()
-            return errors.New("circuit open")
-        }
-    }
-    cb.mu.Unlock()
+### WHEN
 
-    err := fn()
-
-    cb.mu.Lock()
-    defer cb.mu.Unlock()
-    if err != nil {
-        cb.failures++
-        cb.lastFailure = time.Now()
-        if cb.failures >= cb.threshold { cb.state = StateOpen }
-        return err
-    }
-    cb.failures = 0
-    cb.state = StateClosed
-    return nil
-}
-```
-
-### Graceful Shutdown — [CloudNative] Ch.5
-
-```go
-func run(ctx context.Context) error {
-    srv := &http.Server{Addr: ":8080", Handler: mux}
-
-    ctx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
-    defer stop()
-
-    go func() {
-        <-ctx.Done()
-        shutCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-        defer cancel()
-        if err := srv.Shutdown(shutCtx); err != nil {
-            log.Printf("shutdown error: %v", err)
-        }
-    }()
-
-    if err := srv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
-        return err
-    }
-    return nil
-}
-```
-
-### Rate Limiting — [ConcurrencyInGo] Ch.5
-
-```go
-import "golang.org/x/time/rate"
-
-// 10 requests/second, burst of 10
-limiter := rate.NewLimiter(rate.Every(time.Second/10), 10)
-
-func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-    if !limiter.Allow() {
-        http.Error(w, "rate limit exceeded", http.StatusTooManyRequests)
-        return
-    }
-    // handle request
-}
-
-// For async: limiter.Wait(ctx) blocks until token is available
-```
-
-### Health Checks — [CloudNative]
-
-```go
-// /healthz — liveness: is the process alive?
-mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
-    w.WriteHeader(http.StatusOK)
-})
-
-// /readyz — readiness: can this instance serve traffic?
-mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
-    if err := db.PingContext(r.Context()); err != nil {
-        http.Error(w, "db unavailable", http.StatusServiceUnavailable)
-        return
-    }
-    w.WriteHeader(http.StatusOK)
-})
-```
+- **Use context.WithoutCancel**: "When a deferred operation must outlive the request (e.g., async cleanup), use context.WithoutCancel (Go 1.21+)" [Mistakes#62]
 
 ---
 
-## 7. Performance & Pitfalls — [Mistakes] #20-#29, #39, #47, #95-#97, [GoBook] Ch.3
+## Section 7: HTTP & Web
 
-### Slice — [Mistakes] #20-#24
+### DO
 
-```go
-// Pre-allocate when size is known — avoids O(log n) reallocations
-result := make([]User, 0, len(rows))
+- **Use Go 1.22+ ServeMux patterns**: Method and path parameter routing built in [LetsGo]
+  ```go
+  mux := http.NewServeMux()
+  mux.HandleFunc("GET /users/{id}", h.GetUser)
+  mux.HandleFunc("POST /users", h.CreateUser)
+  mux.HandleFunc("DELETE /users/{id}", h.DeleteUser)
+  ```
 
-// Always reassign append result
-s = append(s, item)  // NOT: append(s, item) — result silently discarded
+- **Middleware for cross-cutting concerns**: Standard func(http.Handler) http.Handler signature [CloudNative§4]
+  ```go
+  func Logging(log *slog.Logger) func(http.Handler) http.Handler {
+      return func(next http.Handler) http.Handler {
+          return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+              start := time.Now(); next.ServeHTTP(w, r)
+              log.Info("req", "method", r.Method, "dur", time.Since(start))
+          })
+      }
+  }
+  ```
 
-// Backing array aliasing — sub-slice shares memory with original
-orig := []int{1, 2, 3, 4, 5}
-sub := orig[1:3]        // shares backing array
-sub = append(sub, 99)   // may overwrite orig[3]!
+- **DisallowUnknownFields for JSON decoding**: Reject typos and unexpected input fields [LetsGo]
+  ```go
+  dec := json.NewDecoder(r.Body)
+  dec.DisallowUnknownFields()
+  if err := dec.Decode(&input); err != nil { /* 400 */ }
+  ```
 
-safe := slices.Clone(orig[1:3])  // independent copy
+- **Set server timeouts explicitly**: Prevent slow-client attacks [LetsGo]
+  ```go
+  srv := &http.Server{
+      Addr: ":8080", Handler: mux,
+      ReadTimeout: 5 * time.Second, WriteTimeout: 10 * time.Second,
+      IdleTimeout: 120 * time.Second,
+  }
+  ```
 
-// nil vs empty slice — JSON marshaling differs
-var s []int          // nil  → json.Marshal → "null"
-s := []int{}         // empty → json.Marshal → "[]"
-s := make([]int, 0)  // empty → json.Marshal → "[]"
-// Use make([]T, 0) for JSON API responses that must return "[]"
-```
+### DON'T
 
-### Map — [Mistakes] #27-#29
+- **Don't use default http.Client**: No timeouts means requests can hang forever [Mistakes#81]
+  ```go
+  // BAD: no timeout
+  resp, err := http.Get(url)
+  // GOOD: explicit client with timeout
+  client := &http.Client{Timeout: 10 * time.Second}
+  resp, err := client.Get(url)
+  ```
 
-```go
-// PANIC: writing to nil map
-var m map[string]int
-m["key"] = 1  // panic: assignment to entry in nil map
+- **Don't write body after error status**: WriteHeader can only be called once [LetsGo]
+  ```go
+  // BAD: writes body then tries error (status 200 already sent)
+  json.NewEncoder(w).Encode(data)
+  if err != nil { http.Error(w, "fail", 500) } // too late
+  // GOOD: check error first, then write
+  if err != nil { http.Error(w, "fail", 500); return }
+  json.NewEncoder(w).Encode(data)
+  ```
 
-// Always initialize before writing
-m := make(map[string]int)
-m["key"] = 1  // OK
+- **Don't read request body without size limit**: Prevent memory exhaustion from large payloads [LetsGo]
+  ```go
+  // BAD: unbounded read
+  body, _ := io.ReadAll(r.Body)
+  // GOOD: limit to 1MB
+  r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+  if err := json.NewDecoder(r.Body).Decode(&v); err != nil { /* 400 */ }
+  ```
 
-// Pre-allocate when size is known
-m := make(map[string]int, len(items))
+### WHEN
 
-// Iteration order is random — never rely on it
-for k, v := range m { ... }  // order not guaranteed
-```
-
-### strings.Builder — [Mistakes] #39
-
-```go
-// DON'T: O(n²) — new string allocation on every +
-result := ""
-for _, s := range parts { result += s }
-
-// DO: O(n) — single allocation at the end
-var b strings.Builder
-b.Grow(totalLen)  // optional: pre-allocate if total size known
-for _, s := range parts { b.WriteString(s) }
-result := b.String()
-```
-
-### defer in Loops — [Mistakes] #47
-
-```go
-// WRONG: all defers stack until function returns, not loop end
-for _, f := range files {
-    defer f.Close()  // files not closed until the outer function exits
-}
-
-// RIGHT: use an inner function to scope the defer
-for _, f := range files {
-    func() {
-        defer f.Close()
-        process(f)
-    }()
-}
-```
-
-### Memory Leaks — [Mistakes] #95-#97
-
-```go
-// Slice leak: sub-slice keeps entire backing array alive
-func getFirst100(data []byte) []byte {
-    return data[:100]  // BAD: entire data kept in memory
-}
-func getFirst100(data []byte) []byte {
-    result := make([]byte, 100)
-    copy(result, data[:100])
-    return result  // GOOD: independent allocation
-}
-
-// Goroutine leak: always ensure goroutines can exit
-// See Section 4 for patterns
-```
-
-### Escape Analysis
-
-```go
-// Check what escapes to heap
-// go build -gcflags="-m" ./... 2>&1 | grep "escapes to heap"
-
-// Minimize pointer returns to reduce GC pressure
-func compute() Point { return Point{X: 1, Y: 2} }   // stack-allocated
-func compute() *Point { return &Point{X: 1, Y: 2} }  // heap-allocated (escapes)
-```
+- **Use http.MaxBytesReader vs io.LimitReader**: "For HTTP handlers use MaxBytesReader (returns 413); for general I/O use LimitReader" [LetsGo]
 
 ---
 
-## Quick Decision Reference
+## Section 8: Service Design
 
-| Situation | Pattern | Source |
-|---|---|---|
-| Caller needs to inspect error cause | `%w` | [Mistakes] #49 |
-| Intentionally hide implementation detail | `%v` | [Mistakes] #48 |
-| Combine multiple independent errors | `errors.Join` | [Mistakes] #50 |
-| N independent tasks, cancel-on-first-error | `errgroup` | [Mistakes] #71 |
-| Worker pool, must drain all jobs | `WaitGroup + chan error` | [ConcurrencyInGo] Ch.4 |
-| Protect shared state | `sync.Mutex` | [ConcurrencyInGo] Ch.2 |
-| Transfer data ownership between goroutines | Channel | [ConcurrencyInGo] Ch.2 |
-| Many optional constructor params | Functional Options | [LearningGo] Ch.14 |
-| Config from file/env, >3 required fields | Config Struct | [LearningGo] Ch.14 |
-| Single implementation constructor | Return concrete struct | [LearningGo] Ch.7 |
-| Multiple swappable implementations (exception) | Return interface | [LearningGo] Ch.7 |
-| JSON API returns empty list | `make([]T, 0)` | [Mistakes] #22 |
-| Unstable downstream service | Circuit breaker | [CloudNative] Ch.8 |
-| Transient failures | Retry + exponential backoff + jitter | [CloudNative] Ch.7 |
-| Repeated string concatenation | `strings.Builder` | [Mistakes] #39 |
-| Structured logging | `slog.New(slog.NewJSONHandler(...))` + inject via constructor | Go 1.21+ |
-| Wire dependencies | Constructor injection in `cmd/*/main.go` | [CloudNative] Ch.2 |
-| Load config from env | `env.Parse(&cfg)` at startup, fatal on error | — |
+### DO
+
+- **Constructor injection for dependencies**: Wire in main.go, no frameworks needed [CloudNative§2]
+  ```go
+  func main() {
+      db := mustOpenDB(cfg.DSN)
+      store := postgres.NewUserStore(db)
+      svc := user.NewService(store, log)
+      handler := api.NewHandler(svc, log)
+  }
+  ```
+
+- **Use slog for structured logging**: Key-value pairs, not format strings [EffectiveGo]
+  ```go
+  log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+  log.Info("request", "method", r.Method, "path", r.URL.Path,
+      "status", status, "duration", time.Since(start))
+  ```
+
+- **Config from environment with validation at startup**: Fail fast on missing config [CloudNative§3]
+  ```go
+  type Config struct {
+      DSN  string `env:"DATABASE_URL,required"`
+      Port int    `env:"PORT" envDefault:"8080"`
+  }
+  func Load() Config { var c Config; env.Parse(&c); return c }
+  ```
+
+- **Separate transport/business/storage layers**: Each layer only knows the layer below via interface [CloudNative§2]
+  ```go
+  // transport: internal/http/handler.go — depends on Service interface
+  // business:  internal/user/service.go — depends on Repository interface
+  // storage:   internal/postgres/repo.go — implements Repository
+  ```
+
+### DON'T
+
+- **Don't use global state for dependencies**: Globals prevent testing and parallel execution [Mistakes#1]
+  ```go
+  // BAD: global DB
+  var db *sql.DB
+  func GetUser(id string) (*User, error) { return queryUser(db, id) }
+  // GOOD: injected dependency
+  type Repo struct{ db *sql.DB }
+  func (r *Repo) GetUser(ctx context.Context, id string) (*User, error)
+  ```
+
+- **Don't log sensitive data**: Mask tokens, passwords, PII in log output [CloudNative§3]
+  ```go
+  // BAD: logs full token
+  log.Info("auth", "token", token)
+  // GOOD: mask sensitive fields
+  log.Info("auth", "token", token[:8]+"...")
+  ```
+
+### WHEN
+
+- **Use config struct over env vars directly**: "When config is shared across packages, load once into a struct and inject" [CloudNative§3]
+
+---
+
+## Section 9: Resilience
+
+### DO
+
+- **Exponential backoff with jitter for retries**: Prevent thundering herd on failures [CloudNative§7]
+  ```go
+  func Retry(ctx context.Context, max int, fn func() error) error {
+      for i := range max {
+          if err := fn(); err == nil { return nil }
+          backoff := time.Duration(1<<uint(i)) * 100 * time.Millisecond
+          jitter := time.Duration(rand.Int63n(int64(backoff / 2)))
+          select { case <-ctx.Done(): return ctx.Err(); case <-time.After(backoff+jitter): }
+      }
+      return fmt.Errorf("after %d attempts: %w", max, fn())
+  }
+  ```
+
+- **OS signal handling for graceful shutdown**: Drain in-flight requests before exiting [CloudNative§5]
+  ```go
+  ctx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
+  defer stop()
+  go func() { <-ctx.Done()
+      shutCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+      defer cancel(); srv.Shutdown(shutCtx)
+  }()
+  ```
+
+- **Circuit breaker for external dependencies**: Fail fast when downstream is unhealthy [CloudNative§8]
+  ```go
+  type Breaker struct {
+      mu sync.Mutex; failures, threshold int
+      state State; lastFail time.Time; cooldown time.Duration
+  }
+  func (b *Breaker) Do(fn func() error) error {
+      b.mu.Lock(); if b.state == Open && time.Since(b.lastFail) < b.cooldown {
+          b.mu.Unlock(); return ErrCircuitOpen }; b.mu.Unlock()
+      return fn() // + record success/failure
+  }
+  ```
+
+### DON'T
+
+- **Don't retry without backoff**: Immediate retries amplify failures under load [CloudNative§7]
+  ```go
+  // BAD: tight retry loop hammers failing service
+  for i := 0; i < 3; i++ { err = callService(); if err == nil { break } }
+  // GOOD: exponential backoff (see Retry above)
+  err = Retry(ctx, 3, callService)
+  ```
+
+- **Don't ignore shutdown context timeout**: Services that hang on shutdown delay deployments [CloudNative§5]
+  ```go
+  // BAD: blocks forever waiting for connections
+  srv.Shutdown(context.Background())
+  // GOOD: bounded shutdown
+  ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+  defer cancel()
+  srv.Shutdown(ctx)
+  ```
+
+### WHEN
+
+- **Skip retries for non-transient errors**: "When the error is 4xx (client error), don't retry; only retry on 5xx or network errors" [CloudNative§7]
+
+---
+
+## Section 10: Performance
+
+### DO
+
+- **strings.Builder for loop concatenation**: O(n) vs O(n^2) for repeated string concat [Mistakes#39]
+  ```go
+  var b strings.Builder
+  b.Grow(totalLen)
+  for _, s := range parts { b.WriteString(s) }
+  result := b.String()
+  ```
+
+- **Pre-allocate when size is known**: Apply to slices, maps, and builders [Mistakes#21]
+  ```go
+  result := make([]string, 0, len(input))
+  for _, v := range input { result = append(result, transform(v)) }
+  ```
+
+- **Profile before optimizing with pprof**: Measure first, optimize second [Mistakes#95]
+  ```go
+  import _ "net/http/pprof"
+  // go tool pprof http://localhost:6060/debug/pprof/profile?seconds=30
+  // go tool pprof http://localhost:6060/debug/pprof/heap
+  ```
+
+- **sync.Pool for high-churn objects**: Reuse allocations for frequently created/destroyed objects [Concurrency§3]
+  ```go
+  var bufPool = sync.Pool{New: func() any { return new(bytes.Buffer) }}
+  func process(data []byte) string {
+      buf := bufPool.Get().(*bytes.Buffer); defer func() { buf.Reset(); bufPool.Put(buf) }()
+      buf.Write(data); return buf.String()
+  }
+  ```
+
+### DON'T
+
+- **Don't optimize without measurement**: Guessing at bottlenecks wastes time and adds complexity [Mistakes#95]
+  ```go
+  // BAD: premature optimization without profiling
+  // "I think this map lookup is slow" -> rewrites with unsafe
+  // GOOD: profile first
+  // go test -bench=. -cpuprofile=cpu.prof ./...
+  // go tool pprof cpu.prof
+  ```
+
+- **Don't use pointer receivers for small read-only structs**: Value receivers avoid heap allocation [Mistakes#95]
+  ```go
+  // BAD: pointer for small immutable struct adds GC pressure
+  func (p *Point) Distance(q *Point) float64 { ... }
+  // GOOD: value receiver, stays on stack
+  func (p Point) Distance(q Point) float64 { ... }
+  ```
+
+- **Don't defer in tight loops**: Defers stack until function returns, not loop iteration [Mistakes#47]
+  ```go
+  // BAD: all defers accumulate until function returns
+  for _, f := range files { defer f.Close() }
+  // GOOD: wrap in closure to scope the defer
+  for _, f := range files {
+      func() { defer f.Close(); process(f) }()
+  }
+  ```
+
+### WHEN
+
+- **Use sync.Pool only for high-frequency allocations**: "When profiling shows GC pressure from a specific type allocated in hot paths, use sync.Pool" [Concurrency§3]
