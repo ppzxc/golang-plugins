@@ -25,9 +25,9 @@ Claude Code 플러그인 마켓플레이스입니다. Production-grade Go 개발
 ## 사용 방법
 
 ```
-/golang:coder    # Go 프로덕션 코드 작성 또는 리팩토링 시
-/golang:reviewer # Go 코드 PR 리뷰 시
-/golang:tester   # Go 테스트 작성 또는 개선 시
+/golang:go-coder    # Go 프로덕션 코드 작성 또는 리팩토링 시
+/golang:go-reviewer # Go 코드 PR 리뷰 시
+/golang:go-tester   # Go 테스트 작성 또는 개선 시
 ```
 
 ## 프로젝트 구조

@@ -16,9 +16,9 @@ Based on canonical Go sources:
 
 | Skill | Command | Description |
 |-------|---------|-------------|
-| coder | `/golang:coder` | Types, interfaces, error handling, concurrency, service design, resilience |
-| reviewer | `/golang:reviewer` | Error handling, concurrency safety, naming, API design, performance, security |
-| tester | `/golang:tester` | Table-driven tests, benchmarks, fuzzing, mocks, integration tests, coverage |
+| go-coder | `/golang:go-coder` | Types, interfaces, error handling, concurrency, service design, resilience |
+| go-reviewer | `/golang:go-reviewer` | Error handling, concurrency safety, naming, API design, performance, security |
+| go-tester | `/golang:go-tester` | Table-driven tests, benchmarks, fuzzing, mocks, integration tests, coverage |
 
 ## Installation
 
@@ -32,9 +32,9 @@ Based on canonical Go sources:
 Invoke a skill by its fully-qualified slash command:
 
 ```
-/golang:coder    # writing or refactoring Go production code
-/golang:reviewer # reviewing Go code in pull requests
-/golang:tester   # writing or improving Go tests
+/golang:go-coder    # writing or refactoring Go production code
+/golang:go-reviewer # reviewing Go code in pull requests
+/golang:go-tester   # writing or improving Go tests
 ```
 
 Skills also activate automatically based on context when working with Go code.

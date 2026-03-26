@@ -25,9 +25,9 @@ A Claude Code plugin marketplace providing production-grade Go patterns and best
 ## Usage
 
 ```
-/golang:coder    # writing or refactoring Go production code
-/golang:reviewer # reviewing Go code in pull requests
-/golang:tester   # writing or improving Go tests
+/golang:go-coder    # writing or refactoring Go production code
+/golang:go-reviewer # reviewing Go code in pull requests
+/golang:go-tester   # writing or improving Go tests
 ```
 
 ## Project Structure

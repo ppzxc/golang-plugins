@@ -39,8 +39,10 @@
 
 ## Scope
 
-- SKILL.md frontmatter `name` 필드만 변경 (3개 파일)
-- 디렉토리 구조, plugin.json, cross-reference 등은 변경 없음
+- SKILL.md frontmatter `name` 필드 변경 (3개 파일)
+- SKILL.md 본문 내 cross-reference를 새 FQN으로 업데이트 (15곳)
+- README 4개 파일의 스킬 테이블 및 사용 예시 업데이트
+- 디렉토리 구조, plugin.json은 변경 없음
 
 ## Verification
 
