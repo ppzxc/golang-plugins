@@ -1,5 +1,4 @@
 ---
-name: go-reviewer
 description: "Use when reviewing Go code in pull requests or auditing Go codebases — checklists for error handling, concurrency safety, naming conventions, API design, performance pitfalls, security, and package structure."
 user_invocable: true
 ---
@@ -16,7 +15,7 @@ CHECK/FLAG review checklist for production Go. Every rule cites a canonical sour
 
 ### CHECK
 
-> These checks duplicate coder patterns. See `/golang:go-coder` Section 3 for full error handling rules with code examples.
+> These checks duplicate coder patterns. See `/golang:coder` Section 3 for full error handling rules with code examples.
 >
 > Verify: errors checked `[MUST]` · wrapped with %w `[SHOULD]` · consistent %w/%v strategy `[SHOULD]` · sentinels are package-level `[SHOULD]` · lowercase messages `[SHOULD]`
 
@@ -55,7 +54,7 @@ CHECK/FLAG review checklist for production Go. Every rule cites a canonical sour
   defer func() { closeErr = f.Close() }()
   ```
 
-> Cross-ref: See `/golang:go-coder` Section 3 for full error handling patterns.
+> Cross-ref: See `/golang:coder` Section 3 for full error handling patterns.
 
 ---
 
@@ -63,7 +62,7 @@ CHECK/FLAG review checklist for production Go. Every rule cites a canonical sour
 
 ### CHECK
 
-> These checks duplicate coder patterns. See `/golang:go-coder` Section 5 for full concurrency rules with code examples.
+> These checks duplicate coder patterns. See `/golang:coder` Section 5 for full concurrency rules with code examples.
 >
 > Verify: goroutine exit path `[MUST]` · shared state synchronized `[MUST]` · WaitGroup.Add before goroutine `[MUST]` · defer Unlock after Lock `[MUST]` · channel direction in params `[SHOULD]`
 
@@ -118,7 +117,7 @@ CHECK/FLAG review checklist for production Go. Every rule cites a canonical sour
   }
   ```
 
-> Cross-ref: See `/golang:go-tester` Section 8 for race detection testing patterns.
+> Cross-ref: See `/golang:tester` Section 8 for race detection testing patterns.
 
 ---
 
@@ -201,7 +200,7 @@ CHECK/FLAG review checklist for production Go. Every rule cites a canonical sour
 
 ### CHECK
 
-> These checks duplicate coder patterns. See `/golang:go-coder` Section 2 (interfaces), Section 4 (functions), Section 6 (context) for full rules with code examples.
+> These checks duplicate coder patterns. See `/golang:coder` Section 2 (interfaces), Section 4 (functions), Section 6 (context) for full rules with code examples.
 >
 > Verify: interfaces at consumer side `[SHOULD]` · accept interfaces/return structs `[SHOULD]` · functional options for 3+ optional params `[MAY]` · context.Context first param `[MUST]` · error last return `[MUST]`
 
@@ -228,7 +227,7 @@ CHECK/FLAG review checklist for production Go. Every rule cites a canonical sour
   func (e *EmailNotifier) Send(msg string) error { /* ... */ }
   ```
 
-> Cross-ref: See `/golang:go-coder` Section 2 for full interface and API patterns.
+> Cross-ref: See `/golang:coder` Section 2 for full interface and API patterns.
 
 ---
 
@@ -236,7 +235,7 @@ CHECK/FLAG review checklist for production Go. Every rule cites a canonical sour
 
 ### FLAG
 
-> Performance anti-patterns to flag during review. See `/golang:go-coder` Section 1 (pre-allocation) and Section 10 (performance) for DO rules with code examples.
+> Performance anti-patterns to flag during review. See `/golang:coder` Section 1 (pre-allocation) and Section 10 (performance) for DO rules with code examples.
 >
 > Flag: string concat in loops `[SHOULD]` · slice append without pre-alloc `[SHOULD]` · map without size hint `[SHOULD]` · unnecessary pointer for small structs `[SHOULD]` · string/[]byte conversion in hot path `[SHOULD]` · defer in tight loops `[SHOULD]` · range loop copying large values `[SHOULD]`
 

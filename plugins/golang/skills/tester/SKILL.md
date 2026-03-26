@@ -1,5 +1,4 @@
 ---
-name: go-tester
 description: "Use when writing, debugging, or improving Go tests — table-driven tests, benchmarks, fuzzing, mocks, integration tests, race detection, and coverage."
 user_invocable: true
 ---
@@ -10,7 +9,7 @@ Rule-based reference for writing Go tests. Every rule cites a canonical source.
 
 Sources: [GoBook] The Go Programming Language (Donovan & Kernighan), [Mistakes] 100 Go Mistakes and How to Avoid Them (Harsanyi), [Concurrency] Concurrency in Go (Cox-Buday), [LearningGo] Learning Go, 2nd Edition (Bodner), [LearnWithTests] Learn Go with Tests (Chris James), [CloudNative] Cloud Native Go (Titmus), [EffectiveGo] Effective Go (Go Team)
 
-> See also: `/golang:go-coder` for interface design patterns. `/golang:go-reviewer` for code review checklists.
+> See also: `/golang:coder` for interface design patterns. `/golang:reviewer` for code review checklists.
 
 ---
 
@@ -234,7 +233,7 @@ Sources: [GoBook] The Go Programming Language (Donovan & Kernighan), [Mistakes] 
 
 ### DO
 
-- **[SHOULD] Define narrow interfaces at test site**: Accept only the methods the code under test needs. See also `/golang:go-coder` Section 2 [LearnWithTests#9]
+- **[SHOULD] Define narrow interfaces at test site**: Accept only the methods the code under test needs. See also `/golang:coder` Section 2 [LearnWithTests#9]
   ```go
   type UserFinder interface {
       FindByID(ctx context.Context, id string) (*User, error)
@@ -295,7 +294,7 @@ Sources: [GoBook] The Go Programming Language (Donovan & Kernighan), [Mistakes] 
   func (f *FakeNotifier) Send(msg string) { f.Sent = append(f.Sent, msg) }
   ```
 
-> Cross-ref: See `/golang:go-coder` Section 2 for interface design patterns.
+> Cross-ref: See `/golang:coder` Section 2 for interface design patterns.
 
 ---
 
@@ -424,7 +423,7 @@ Sources: [GoBook] The Go Programming Language (Donovan & Kernighan), [Mistakes] 
   go test -bench=. ./...      # performance
   ```
 
-> Cross-ref: See `/golang:go-reviewer` Section 5 for performance review checklist.
+> Cross-ref: See `/golang:reviewer` Section 5 for performance review checklist.
 
 ---
 
@@ -518,6 +517,6 @@ Sources: [GoBook] The Go Programming Language (Donovan & Kernighan), [Mistakes] 
   # Fix the race, do not suppress the detector.
   ```
 
-> Cross-ref: See `/golang:go-reviewer` Section 2 for concurrency safety review checklist.
+> Cross-ref: See `/golang:reviewer` Section 2 for concurrency safety review checklist.
 
 ---

@@ -1,5 +1,4 @@
 ---
-name: go-coder
 description: "Use when writing or refactoring Go production code — types, interfaces, error handling, concurrency, context, HTTP, service design, resilience, and performance patterns."
 user_invocable: true
 ---
@@ -423,8 +422,8 @@ Rule-based reference for production Go code. Every rule cites a canonical source
 ### WHEN
 
 - **Use WaitGroup over errgroup**: "When workers must drain all jobs even after errors, use WaitGroup + error channel" [Concurrency§4]
-- Cross-ref: See `/golang:go-reviewer` Section 2 for concurrency code review checks
-- Cross-ref: See `/golang:go-tester` Section 8 for race detection and concurrent testing
+- Cross-ref: See `/golang:reviewer` Section 2 for concurrency code review checks
+- Cross-ref: See `/golang:tester` Section 8 for race detection and concurrent testing
 
 ---
 
