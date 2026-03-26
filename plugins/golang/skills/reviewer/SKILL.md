@@ -1,5 +1,5 @@
 ---
-name: reviewer
+name: go-reviewer
 description: "Use when reviewing Go code in pull requests or auditing Go codebases — checklists for error handling, concurrency safety, naming conventions, API design, performance pitfalls, security, and package structure."
 user_invocable: true
 ---

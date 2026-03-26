@@ -1,5 +1,5 @@
 ---
-name: coder
+name: go-coder
 description: "Use when writing or refactoring Go production code — types, interfaces, error handling, concurrency, context, HTTP, service design, resilience, and performance patterns."
 user_invocable: true
 ---

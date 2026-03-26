@@ -1,5 +1,5 @@
 ---
-name: tester
+name: go-tester
 description: "Use when writing, debugging, or improving Go tests — table-driven tests, benchmarks, fuzzing, mocks, integration tests, race detection, and coverage."
 user_invocable: true
 ---
